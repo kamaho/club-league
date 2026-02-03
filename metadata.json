@@ -1,0 +1,5 @@
+{
+  "name": "Club League",
+  "description": "A mobile-first tennis club league management app featuring scheduling, score reporting, standings, and UTR tracking.",
+  "requestFramePermissions": []
+}

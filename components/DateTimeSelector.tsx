@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { format, addDays, setHours, setMinutes, isSameMonth } from 'date-fns';
+import { format, addDays, isSameMonth } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { useAppContext } from '../context/AppContext';
 
@@ -25,16 +25,18 @@ export const DateTimeSelector: React.FC<DateTimeSelectorProps> = ({ onSelect, st
 
   const handleTimeClick = (hour: number) => {
     setSelectedTime(hour);
-    const dateWithTime = setMinutes(setHours(selectedDate, hour), 0);
+    const y = selectedDate.getFullYear(), m = selectedDate.getMonth(), d = selectedDate.getDate();
+    const dateWithTime = new Date(y, m, d, hour, 0, 0, 0);
     onSelect(dateWithTime.toISOString());
   };
 
   const formatTime = (hour: number) => {
-      const date = setHours(new Date(), hour);
       if (language === 'no') {
-          return format(date, 'HH:mm');
+          return `${hour.toString().padStart(2, '0')}:00`;
       }
-      return format(date, 'h:mm a');
+      const period = hour >= 12 ? 'pm' : 'am';
+      const h = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      return `${h}:00 ${period}`;
   };
 
   const formatDateLabel = (date: Date, type: 'month' | 'day' | 'num') => {

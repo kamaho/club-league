@@ -2,32 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { db } from '../services/db';
+import { useQuery } from '../hooks/useQuery';
 import { calculateStandings } from '../utils/standings';
 import { ChevronDown, Trophy, Medal } from 'lucide-react';
 
 export const Standings: React.FC = () => {
-  const seasons = db.getSeasons().sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
-  
-  // Default to active season, or first available
+  const [seasonsData] = useQuery(() => db.getSeasons(), []);
+  const seasons = (seasonsData ?? []).sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime());
   const activeSeason = seasons.find(s => s.status === 'ACTIVE') || seasons[0];
-  
-  const [selectedSeasonId, setSelectedSeasonId] = useState(activeSeason?.id);
+
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | undefined>(undefined);
   const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
-  
-  const divisions = db.getDivisions(selectedSeasonId);
-  const [activeDivisionId, setActiveDivisionId] = useState(divisions[0]?.id);
 
-  // Update division if season changes
   useEffect(() => {
-    const newDivs = db.getDivisions(selectedSeasonId);
-    if (newDivs.length > 0) {
-        setActiveDivisionId(newDivs[0].id);
+    if (seasons.length > 0 && !selectedSeasonId) {
+      setSelectedSeasonId(activeSeason?.id ?? seasons[0].id);
     }
-  }, [selectedSeasonId]);
+  }, [seasons.length, selectedSeasonId, activeSeason?.id]);
 
-  const matches = db.getMatchesForDivision(activeDivisionId || '');
-  const players = db.getPlayersInDivision(activeDivisionId || '');
-  
+  const [divisionsData] = useQuery(() => selectedSeasonId ? db.getDivisions(selectedSeasonId) : Promise.resolve([]), [selectedSeasonId]);
+  const divisions = divisionsData ?? [];
+  const [activeDivisionId, setActiveDivisionId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (divisions.length > 0) {
+      setActiveDivisionId(prev => (prev && divisions.some(d => d.id === prev)) ? prev : divisions[0].id);
+    }
+  }, [divisions]);
+
+  const [matchesData] = useQuery(() => activeDivisionId ? db.getMatchesForDivision(activeDivisionId) : Promise.resolve([]), [activeDivisionId]);
+  const [playersData] = useQuery(() => activeDivisionId ? db.getPlayersInDivision(activeDivisionId) : Promise.resolve([]), [activeDivisionId]);
+  const matches = matchesData ?? [];
+  const players = playersData ?? [];
+
   const standings = calculateStandings(matches, players);
   const isCompletedSeason = selectedSeason?.status === 'COMPLETED';
 
@@ -98,7 +105,7 @@ export const Standings: React.FC = () => {
             {/* Season Selector */}
             <div className="relative flex-1">
                 <select 
-                    value={selectedSeasonId}
+                    value={selectedSeasonId ?? ''}
                     onChange={(e) => setSelectedSeasonId(e.target.value)}
                     className="w-full appearance-none bg-white border border-slate-200 text-slate-700 py-2.5 pl-4 pr-10 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-lime-400 shadow-sm"
                 >
@@ -113,8 +120,8 @@ export const Standings: React.FC = () => {
             {divisions.length > 1 && (
                 <div className="relative flex-1">
                     <select 
-                        value={activeDivisionId}
-                        onChange={(e) => setActiveDivisionId(e.target.value)}
+                    value={activeDivisionId ?? ''}
+                    onChange={(e) => setActiveDivisionId(e.target.value)}
                         className="w-full appearance-none bg-slate-100 border-transparent text-slate-700 py-2.5 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-lime-400"
                     >
                         {divisions.map(d => (
@@ -180,30 +187,21 @@ export const Standings: React.FC = () => {
                   <h3 className="font-bold">Hall of Fame</h3>
               </div>
               <div className="space-y-3">
-                 {seasons.filter(s => s.status === 'COMPLETED').slice(0, 3).map(s => {
-                     // Quick calculation for history display
-                     const divs = db.getDivisions(s.id);
-                     if (divs.length === 0) return null;
-                     const sMatches = db.getMatchesForDivision(divs[0].id);
-                     const sPlayers = db.getPlayersInDivision(divs[0].id);
-                     const sStandings = calculateStandings(sMatches, sPlayers);
-                     if (sStandings.length === 0) return null;
-                     
-                     return (
+                 {seasons.filter(s => s.status === 'COMPLETED').slice(0, 3).map(s => (
                          <div key={s.id} className="flex justify-between items-center bg-slate-800 p-3 rounded-lg border border-slate-700">
                              <div>
                                  <div className="text-xs text-slate-400 font-bold uppercase">{s.name}</div>
-                                 <div className="font-bold text-sm text-yellow-400">{sStandings[0].playerName}</div>
+                                 <div className="font-bold text-sm text-yellow-400">—</div>
                              </div>
                              <button 
+                                type="button"
                                 onClick={() => setSelectedSeasonId(s.id)}
                                 className="text-xs bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded transition-colors"
                              >
                                  View Results
                              </button>
                          </div>
-                     );
-                 })}
+                 ))}
                  {seasons.filter(s => s.status === 'COMPLETED').length === 0 && (
                      <p className="text-slate-500 text-sm">No past seasons completed yet.</p>
                  )}

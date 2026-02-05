@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
-import { MatchStatus, MatchSet, MatchLogistics, ProposalLogistics } from '../types';
-import { format } from 'date-fns';
+import { useQuery } from '../hooks/useQuery';
+import { MatchStatus, MatchSet, MatchLogistics, ProposalLogistics, User } from '../types';
+import { calculateStandings } from '../utils/standings';
+import { format, setMinutes, setSeconds } from 'date-fns';
 import { nb } from 'date-fns/locale';
 import { Calendar, Clock, MessageSquare, Check, Trophy, Trash2, Plus, X, MapPin, Phone, Mail } from 'lucide-react';
 import { DateTimeSelector } from '../components/DateTimeSelector';
@@ -13,33 +15,67 @@ import { useAppContext } from '../context/AppContext';
 
 export const MatchDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const user = authService.getCurrentUser();
-  const match = db.getMatch(id || '');
+  const matchId = id || '';
+
+  const [detail, detailLoading, refetchDetail] = useQuery(async () => {
+    const m = await db.getMatch(matchId);
+    if (!m) return { match: undefined, playerA: undefined, playerB: undefined, proposals: [], division: undefined };
+    const [pA, pB, props, div] = await Promise.all([
+      db.getUser(m.playerAId),
+      db.getUser(m.playerBId),
+      db.getProposals(m.id),
+      m.divisionId ? db.getDivision(m.divisionId) : Promise.resolve(undefined),
+    ]);
+    return { match: m, playerA: pA, playerB: pB, proposals: props ?? [], division: div };
+  }, [matchId]);
+
+  const opponentId = detail?.match && user ? (user.id === detail.match.playerAId ? detail.match.playerBId : detail.match.playerAId) : undefined;
+  const divisionId = detail?.division?.id;
+  const [opponentStats] = useQuery(async () => {
+    if (!opponentId) return { winRate: 0, totalMatches: 0, rank: undefined as number | undefined };
+    const [matches, divMatches, divPlayers] = await Promise.all([
+      db.getMatchesForUser(opponentId),
+      divisionId ? db.getMatchesForDivision(divisionId) : Promise.resolve([]),
+      divisionId ? db.getPlayersInDivision(divisionId) : Promise.resolve([]),
+    ]);
+    const completed = matches.filter(m => m.status === MatchStatus.CONFIRMED || m.status === MatchStatus.REPORTED);
+    const withScore = completed.filter(m => m.score);
+    const wins = withScore.filter(m => m.score!.winnerId === opponentId).length;
+    const winRate = withScore.length > 0 ? Math.round((wins / withScore.length) * 100) : 0;
+    let rank: number | undefined;
+    if (divMatches.length > 0 && divPlayers.length > 0) {
+      const standings = calculateStandings(divMatches, divPlayers);
+      const idx = standings.findIndex(s => s.playerId === opponentId);
+      rank = idx >= 0 ? idx + 1 : undefined;
+    }
+    return { winRate, totalMatches: withScore.length, rank };
+  }, [opponentId, divisionId]);
+
   const { currentDate, t, language } = useAppContext();
-  
-  // State for new proposal
   const [proposalTimes, setProposalTimes] = useState<string[]>([]);
   const [proposalMsg, setProposalMsg] = useState('');
   const [showCounterPropose, setShowCounterPropose] = useState(false);
-  
-  // Proposal Logistics Form
   const [proposalLogistics, setProposalLogistics] = useState<ProposalLogistics>({
-      courtNumber: 0, // 0 means unassigned or choose later
-      bookedById: user?.id || '',
-      cost: 0,
-      splitType: 'SPLIT'
+    courtNumber: 0,
+    bookedById: user?.id || '',
+    cost: 0,
+    splitType: 'SPLIT',
   });
-  
-  // State for Score
   const [sets, setSets] = useState<MatchSet[]>([{ scoreA: 0, scoreB: 0 }]);
-  
-  if (!match || !user) return <div>Match not found</div>;
+  const [proposalSentSuccess, setProposalSentSuccess] = useState(false);
+  const [showOpponentProfile, setShowOpponentProfile] = useState<User | null>(null);
 
-  const playerA = db.getUser(match.playerAId);
-  const playerB = db.getUser(match.playerBId);
-  const proposals = db.getProposals(match.id);
-  
+  if (detailLoading && !detail) {
+    return <Layout><div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div></Layout>;
+  }
+  const match = detail?.match;
+  const playerA = detail?.playerA;
+  const playerB = detail?.playerB;
+  const proposals = detail?.proposals ?? [];
+  const division = detail?.division;
+
+  if (!match || !user) return <Layout><div>Match not found</div></Layout>;
   if (!playerA || !playerB) return null;
 
   const isParticipant = user.id === playerA.id || user.id === playerB.id;
@@ -52,11 +88,12 @@ export const MatchDetail: React.FC = () => {
   // If there are incoming proposals, default to hiding the form unless explicitly requested
   const showProposalForm = !hasIncomingProposals || showCounterPropose;
 
-  // Formatting helpers
+  // Formatting helpers – times shown as whole hours only (12:00, 13:00)
+  const toWholeHour = (date: Date) => setSeconds(setMinutes(date, 0), 0);
   const formatDateTime = (dateString: string) => {
-     const date = new Date(dateString);
-     if (language === 'no') return format(date, 'd. MMM, HH:mm', { locale: nb });
-     return format(date, 'MMM d, h:mm a');
+     const date = toWholeHour(new Date(dateString));
+     if (language === 'no') return format(date, 'd. MMM, HH:00', { locale: nb });
+     return format(date, 'MMM d, h:00 a');
   };
 
   const formatDay = (dateString: string) => {
@@ -66,9 +103,9 @@ export const MatchDetail: React.FC = () => {
   };
 
   const formatTime = (dateString: string) => {
-     const date = new Date(dateString);
-     if (language === 'no') return format(date, 'HH:mm');
-     return format(date, 'h:mm a');
+     const date = toWholeHour(new Date(dateString));
+     if (language === 'no') return format(date, 'HH:00');
+     return format(date, 'h:00 a');
   };
 
   const handleAddTimeOption = (isoString: string) => {
@@ -81,73 +118,60 @@ export const MatchDetail: React.FC = () => {
     setProposalTimes(proposalTimes.filter(t => t !== isoString));
   };
 
-  const handleSubmitProposal = () => {
+  const handleSubmitProposal = async () => {
     if (proposalTimes.length > 0) {
-      // Ensure bookedById is set correctly even if default
       const finalLogistics = { ...proposalLogistics, bookedById: proposalLogistics.bookedById || user.id };
-      
-      db.createProposal(match.id, user.id, proposalTimes, proposalMsg, finalLogistics);
-      // Reset
+      await db.createProposal(match.id, user.id, proposalTimes, proposalMsg, finalLogistics);
       setProposalTimes([]);
       setProposalMsg('');
       setShowCounterPropose(false);
-      navigate(0); // Refresh
+      setProposalSentSuccess(true);
+      refetchDetail();
+      setTimeout(() => setProposalSentSuccess(false), 2500);
     }
   };
 
-  const handleAcceptProposal = (proposalId: string, time: string) => {
-      const proposal = proposals.find(p => p.id === proposalId);
-      if (!proposal) return;
-      
-      const confirmMsg = proposal.logistics 
-        ? `Confirm match for ${formatDateTime(time)}?\n\nLogistics:\nCourt: ${proposal.logistics.courtNumber || 'Any'}\nCost: ${proposal.logistics.cost} ${t('common.currency')}\nBooking: ${proposal.logistics.bookedById === user.id ? 'You' : opponent.name}` 
-        : `Confirm match for ${formatDateTime(time)}?`;
-
-      if (window.confirm(confirmMsg)) {
-        // Create match logistics from proposal logistics
-        let logistics: MatchLogistics | undefined;
-        
-        if (proposal.logistics) {
-            logistics = {
-                courtNumber: proposal.logistics.courtNumber || 1, // Default to 1 if not specified
-                bookedById: proposal.logistics.bookedById,
-                cost: proposal.logistics.cost,
-                splitType: proposal.logistics.splitType,
-                isSettled: false
-            };
-        }
-
-        db.updateMatchStatus(match.id, MatchStatus.SCHEDULED, time, logistics);
-        navigate(0);
+  const handleAcceptProposal = async (proposalId: string, time: string) => {
+    const proposal = proposals.find(p => p.id === proposalId);
+    if (!proposal) return;
+    const confirmMsg = proposal.logistics
+      ? `Confirm match for ${formatDateTime(time)}?\n\nLogistics:\nCourt: ${proposal.logistics.courtNumber || 'Any'}\nCost: ${proposal.logistics.cost} ${t('common.currency')}\nBooking: ${proposal.logistics.bookedById === user.id ? 'You' : opponent.name}`
+      : `Confirm match for ${formatDateTime(time)}?`;
+    if (window.confirm(confirmMsg)) {
+      let logistics: MatchLogistics | undefined;
+      if (proposal.logistics) {
+        logistics = {
+          courtNumber: proposal.logistics.courtNumber || 1,
+          bookedById: proposal.logistics.bookedById,
+          cost: proposal.logistics.cost,
+          splitType: proposal.logistics.splitType,
+          isSettled: false,
+        };
       }
+      await db.updateMatchStatus(match.id, MatchStatus.SCHEDULED, time, logistics);
+      refetchDetail();
+    }
   };
 
-  const handleSettlePayment = () => {
-      db.updateMatchStatus(match.id, match.status, match.scheduledAt, { ...match.logistics!, isSettled: true });
-      navigate(0);
+  const handleSettlePayment = async () => {
+    await db.updateMatchStatus(match.id, match.status, match.scheduledAt, { ...match.logistics!, isSettled: true });
+    refetchDetail();
   };
 
-  const handleSubmitScore = () => {
-    // Calculate winner
-    let winsA = 0;
-    let winsB = 0;
+  const handleSubmitScore = async () => {
+    let winsA = 0, winsB = 0;
     sets.forEach(s => {
       if (s.scoreA > s.scoreB) winsA++;
       else if (s.scoreB > s.scoreA) winsB++;
     });
-    
     const winnerId = winsA > winsB ? playerA.id : playerB.id;
-    
-    db.submitScore(match.id, {
-      sets,
-      winnerId
-    });
-    navigate(0);
+    await db.submitScore(match.id, { sets, winnerId });
+    refetchDetail();
   };
 
-  const handleConfirmScore = () => {
-    db.confirmScore(match.id);
-    navigate(0);
+  const handleConfirmScore = async () => {
+    await db.confirmScore(match.id);
+    refetchDetail();
   };
 
   // Payment Calculation Helper
@@ -181,14 +205,25 @@ export const MatchDetail: React.FC = () => {
       {/* Match Header */}
       <div className="text-center mb-6">
         <div className="inline-block px-3 py-1 bg-slate-200 rounded-full text-[10px] font-bold text-slate-600 uppercase tracking-wide mb-4">
-           {match.divisionId ? `${db.getDivision(match.divisionId)?.name ?? ''} • ${t('common.round')} ${match.round}` : t('common.friendly')}
+           {match.divisionId ? `${division?.name ?? ''} • ${t('common.round')} ${match.round}` : t('common.friendly')}
         </div>
         <div className="flex justify-between items-center max-w-sm mx-auto px-4">
           <div className="flex flex-col items-center w-1/3">
-            <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-              {playerA.avatarUrl ? <img src={playerA.avatarUrl} className="w-full h-full rounded-full" /> : playerA.name.charAt(0)}
-            </div>
-            <div className="font-bold text-slate-900 text-sm leading-tight">{playerA.name.split(' ')[0]}</div>
+            {opponent.id === playerA.id ? (
+              <button type="button" onClick={() => setShowOpponentProfile(playerA)} className="flex flex-col items-center w-full rounded-xl hover:ring-2 hover:ring-lime-400 transition-all focus:outline-none focus:ring-2 focus:ring-lime-400">
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
+                  {playerA.avatarUrl ? <img src={playerA.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerA.name.charAt(0)}
+                </div>
+                <div className="font-bold text-slate-900 text-sm leading-tight">{playerA.name.split(' ')[0]}</div>
+              </button>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
+                  {playerA.avatarUrl ? <img src={playerA.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerA.name.charAt(0)}
+                </div>
+                <div className="font-bold text-slate-900 text-sm leading-tight">{playerA.name.split(' ')[0]}</div>
+              </>
+            )}
           </div>
           <div className="w-1/3 flex flex-col items-center">
             {match.status === MatchStatus.SCHEDULED && match.scheduledAt ? (
@@ -208,13 +243,56 @@ export const MatchDetail: React.FC = () => {
             )}
           </div>
           <div className="flex flex-col items-center w-1/3">
-             <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-              {playerB.avatarUrl ? <img src={playerB.avatarUrl} className="w-full h-full rounded-full" /> : playerB.name.charAt(0)}
-            </div>
-            <div className="font-bold text-slate-900 text-sm leading-tight">{playerB.name.split(' ')[0]}</div>
+            {opponent.id === playerB.id ? (
+              <button type="button" onClick={() => setShowOpponentProfile(playerB)} className="flex flex-col items-center w-full rounded-xl hover:ring-2 hover:ring-lime-400 transition-all focus:outline-none focus:ring-2 focus:ring-lime-400">
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
+                  {playerB.avatarUrl ? <img src={playerB.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerB.name.charAt(0)}
+                </div>
+                <div className="font-bold text-slate-900 text-sm leading-tight">{playerB.name.split(' ')[0]}</div>
+              </button>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
+                  {playerB.avatarUrl ? <img src={playerB.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerB.name.charAt(0)}
+                </div>
+                <div className="font-bold text-slate-900 text-sm leading-tight">{playerB.name.split(' ')[0]}</div>
+              </>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Opponent profile popover */}
+      {showOpponentProfile && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowOpponentProfile(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-xs w-full p-6 animate-slide-up" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-end mb-2">
+              <button type="button" onClick={() => setShowOpponentProfile(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+            </div>
+            <div className="text-center mb-4">
+              <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-500 mx-auto mb-2">
+                {showOpponentProfile.avatarUrl ? <img src={showOpponentProfile.avatarUrl} className="w-full h-full rounded-full" alt="" /> : showOpponentProfile.name.charAt(0)}
+              </div>
+              <h3 className="font-bold text-slate-900">{showOpponentProfile.name}</h3>
+              <p className="text-xs text-slate-500">UTR {showOpponentProfile.utr ?? '—'}</p>
+            </div>
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">{language === 'no' ? 'Rank' : 'Rank'}</span>
+                <span className="font-bold text-slate-900">{opponentStats?.rank ?? '—'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">{language === 'no' ? 'Seiersrate' : 'Win rate'}</span>
+                <span className="font-bold text-slate-900">{opponentStats?.winRate ?? 0}%</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">{language === 'no' ? 'Alder' : 'Age'}</span>
+                <span className="font-bold text-slate-900">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Contact Info Section - Displayed if participant */}
       {isParticipant && (
@@ -323,7 +401,6 @@ export const MatchDetail: React.FC = () => {
         {/* SCHEDULING */}
         {isParticipant && (match.status === MatchStatus.PENDING || match.status === MatchStatus.PROPOSED) && (
           <div className="space-y-6">
-            
             {/* INCOMING PROPOSALS */}
             {proposals.length > 0 && (
                 <div className="space-y-4">
@@ -333,8 +410,11 @@ export const MatchDetail: React.FC = () => {
                       <div className="h-px bg-slate-200 flex-1"></div>
                    </div>
                    
-                   {proposals.map(p => {
+                   {(() => {
+                     const lastProposalIsMine = proposals[proposals.length - 1].proposedById === user.id;
+                     return proposals.map(p => {
                        const isMine = p.proposedById === user.id;
+                       const confirmDisabled = !isMine && lastProposalIsMine;
                        return (
                           <Card key={p.id} className={`${isMine ? 'bg-slate-50 border-slate-100' : 'bg-white border-amber-200 shadow-sm ring-1 ring-amber-50'}`}>
                              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-slate-100/50">
@@ -355,10 +435,11 @@ export const MatchDetail: React.FC = () => {
                                 {p.proposedTimes.map((time, idx) => (
                                     <button
                                         key={idx}
-                                        disabled={isMine}
+                                        type="button"
+                                        disabled={isMine || confirmDisabled}
                                         onClick={() => handleAcceptProposal(p.id, time)}
                                         className={`w-full text-left p-3 rounded-lg border flex justify-between items-center transition-all
-                                            ${isMine 
+                                            ${isMine || confirmDisabled
                                                 ? 'bg-white border-slate-200 text-slate-400 cursor-default' 
                                                 : 'bg-white border-amber-200 text-slate-800 hover:bg-lime-400 hover:border-lime-500 hover:text-slate-900 hover:shadow-md'
                                             }`}
@@ -370,7 +451,7 @@ export const MatchDetail: React.FC = () => {
                                                 <span className="text-sm font-bold">{formatTime(time)}</span>
                                             </div>
                                         </div>
-                                        {!isMine && <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-1 rounded">{t('match.proposal.confirmBtn')}</span>}
+                                        {!isMine && !confirmDisabled && <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-1 rounded">{t('match.proposal.confirmBtn')}</span>}
                                     </button>
                                 ))}
                              </div>
@@ -395,7 +476,8 @@ export const MatchDetail: React.FC = () => {
                              )}
                           </Card>
                        );
-                   })}
+                     });
+                   })()}
                 </div>
             )}
 
@@ -551,14 +633,16 @@ export const MatchDetail: React.FC = () => {
 
                         <button 
                             onClick={handleSubmitProposal}
-                            disabled={proposalTimes.length === 0}
+                            disabled={proposalTimes.length === 0 || proposalSentSuccess}
                             className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                                proposalTimes.length > 0 
+                                proposalSentSuccess
+                                ? 'bg-green-600 text-white cursor-default'
+                                : proposalTimes.length > 0 
                                 ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-lg' 
                                 : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             }`}
                         >
-                            {t('match.logistics.send', {count: proposalTimes.length})}
+                            {proposalSentSuccess ? (language === 'no' ? 'Forslag sendt!' : 'Proposal sent!') : t('match.logistics.send', {count: proposalTimes.length})}
                         </button>
                     </div>
                 </Card>

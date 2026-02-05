@@ -15,6 +15,7 @@ import { RatingInfo } from './pages/RatingInfo';
 import { authService } from './services/auth';
 import { UserRole } from './types';
 import { AppProvider } from './context/AppContext';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, requiredRole }: { children?: React.ReactNode; requiredRole?: UserRole }) => {
@@ -33,9 +34,10 @@ const ProtectedRoute = ({ children, requiredRole }: { children?: React.ReactNode
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
-      <Router>
-        <Routes>
+    <ErrorBoundary>
+      <AppProvider>
+        <Router>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -98,6 +100,7 @@ const App: React.FC = () => {
         </Routes>
       </Router>
     </AppProvider>
+    </ErrorBoundary>
   );
 };
 

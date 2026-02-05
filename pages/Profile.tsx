@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { authService } from '../services/auth';
 import { db } from '../services/db';
+import { useQuery } from '../hooks/useQuery';
 import { calculateStandings } from '../utils/standings';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
@@ -35,16 +36,43 @@ export const Profile: React.FC = () => {
     }
   }, [currentUser?.id]); // Only re-sync if ID changes (e.g. relogin)
 
-  if (!user) return null;
+  const [allMatchesData] = useQuery(() => user ? db.getMatchesForUser(user.id) : Promise.resolve([]), [user?.id]);
+  const [enrollmentsData, , refetchEnrollments] = useQuery(() => user ? db.getEnrollmentsForUser(user.id) : Promise.resolve([]), [user?.id]);
+  const allMatches = allMatchesData ?? [];
+  const enrollments = enrollmentsData ?? [];
+  const currentDivisionId = enrollments[0]?.divisionId;
 
-  // --- STATS CALCULATION ---
-  const allMatches = db.getMatchesForUser(user.id);
-  
-  // Separate Matches
+  const [divisionData] = useQuery(() => currentDivisionId ? db.getDivision(currentDivisionId) : Promise.resolve(undefined), [currentDivisionId]);
+  const [divisionPlayersData] = useQuery(() => currentDivisionId ? db.getPlayersInDivision(currentDivisionId) : Promise.resolve([]), [currentDivisionId]);
+  const [divisionMatchesData] = useQuery(() => currentDivisionId ? db.getMatchesForDivision(currentDivisionId) : Promise.resolve([]), [currentDivisionId]);
+  const [seasonsData] = useQuery(() => db.getSeasons(), []);
+  const [usersData] = useQuery(() => db.getUsers(), []);
+  const seasons = seasonsData ?? [];
+  const seasonIds = seasons.map(s => s.id).join(',');
+  const [allDivisionsData] = useQuery(
+    () => (seasons.length ? Promise.all(seasons.map(s => db.getDivisions(s.id))).then(arr => arr.flat()) : Promise.resolve([])),
+    [seasonIds]
+  );
+  const allDivisions = allDivisionsData ?? [];
+
+  const division = divisionData ?? undefined;
+  const divisionPlayers = divisionPlayersData ?? [];
+  const divisionMatches = divisionMatchesData ?? [];
+  const users = usersData ?? [];
+  const getDivision = (divisionId: string) => allDivisions.find(d => d.id === divisionId);
+  const getSeasonForMatch = (match: { divisionId?: string }) => {
+    const div = match.divisionId ? getDivision(match.divisionId) : undefined;
+    return div ? seasons.find(s => s.id === div.seasonId) : undefined;
+  };
+
+  const standings = calculateStandings(divisionMatches, divisionPlayers);
+  const rank = user ? standings.findIndex(s => s.playerId === user.id) + 1 : 0;
+
   const leagueMatches = allMatches.filter(m => m.type !== MatchType.FRIENDLY);
   const friendlyMatches = allMatches.filter(m => m.type === MatchType.FRIENDLY);
 
   const calculateStats = (matchList: typeof allMatches) => {
+    if (!user) return { completed: [] as typeof allMatches, won: 0, lost: 0, winRate: 0 };
     const completed = matchList.filter(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER');
     const won = completed.filter(m => m.score?.winnerId === user.id).length;
     const lost = completed.length - won;
@@ -55,31 +83,25 @@ export const Profile: React.FC = () => {
   const leagueStats = calculateStats(leagueMatches);
   const friendlyStats = calculateStats(friendlyMatches);
 
-  // Ranking calculation (League Only)
-  const enrollments = db.getEnrollmentsForUser(user.id);
-  const currentDivisionId = enrollments[0]?.divisionId;
-  const division = db.getDivision(currentDivisionId);
-  const divisionPlayers = db.getPlayersInDivision(currentDivisionId || '');
-  const divisionMatches = db.getMatchesForDivision(currentDivisionId || '');
-  const standings = calculateStandings(divisionMatches, divisionPlayers);
-  const rank = standings.findIndex(s => s.playerId === user.id) + 1;
+  if (!user) return null;
 
-  // Mock UTR history
-  const data = [
-    { date: 'Jan', utr: 6.0 },
-    { date: 'Feb', utr: 6.2 },
-    { date: 'Mar', utr: 6.1 },
-    { date: 'Apr', utr: 6.4 },
-    { date: 'May', utr: user.utr || 6.5 },
-  ];
+  // Development curve: no fake history. New users see empty state until they have completed matches.
+  const hasAnyCompletedMatches = leagueMatches.some(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER') ||
+    friendlyMatches.some(m => m.status === 'CONFIRMED' || m.status === 'REPORTED');
+  const developmentData = hasAnyCompletedMatches
+    ? [
+        { date: language === 'no' ? 'Start' : 'Start', utr: user.utr || 1 },
+        { date: language === 'no' ? 'Nå' : 'Now', utr: user.utr || 1 },
+      ]
+    : [];
 
   // --- SETTINGS LOGIC ---
 
   // Determine if there are unsaved changes
   const hasChanges = JSON.stringify(user) !== JSON.stringify(editForm);
 
-  const handleSave = () => {
-    const updated = db.updateUser(user.id, editForm);
+  const handleSave = async () => {
+    const updated = await db.updateUser(user.id, editForm);
     setUser({ ...updated } as UserType);
     setEditForm({ ...updated } as UserType);
   };
@@ -88,17 +110,22 @@ export const Profile: React.FC = () => {
     setEditForm({ ...user } as UserType);
   };
 
-  const handleDeleteAccount = () => {
-    if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
-      db.deleteUser(user.id);
+  const handleDeleteAccount = async () => {
+    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+      await db.deleteUser(user.id);
       authService.logout();
       navigate('/login');
     }
   };
 
-  const handleCancelSeason = () => {
-    if (window.confirm("Are you sure you want to withdraw from the current season? Matches will be marked as walkovers.")) {
-      alert("Season withdrawal request sent to admin.");
+  const handleCancelSeason = async () => {
+    if (!currentDivisionId) return;
+    if (!window.confirm("Are you sure you want to withdraw from the current season? Matches will be marked as walkovers.")) return;
+    try {
+      await db.removePlayerFromDivision(currentDivisionId, user.id);
+      await refetchEnrollments();
+    } catch {
+      alert("Could not withdraw. Please try again.");
     }
   };
 
@@ -181,18 +208,24 @@ export const Profile: React.FC = () => {
                  </div>
               </div>
 
-              {/* UTR Chart */}
-              <Card title="Development Curve">
-                <div className="h-48 w-full mt-2">
+              {/* UTR Chart – only show when user has data; new users see current rating only */}
+              <Card title={language === 'no' ? 'Utviklingskurve' : 'Development Curve'}>
+                {developmentData.length === 0 ? (
+                  <div className="h-48 flex items-center justify-center text-slate-400 text-sm px-4 text-center">
+                    {language === 'no' ? 'Ingen data ennå. Spill kamper for å se utvikling.' : 'No data yet. Play matches to see your development.'}
+                  </div>
+                ) : (
+                  <div className="h-48 w-full mt-2">
                     <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={data}>
+                      <LineChart data={developmentData}>
                         <XAxis dataKey="date" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                        <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} hide />
+                        <YAxis domain={[Math.max(0, (user.utr || 1) - 1), (user.utr || 1) + 1]} hide />
                         <Tooltip />
                         <Line type="monotone" dataKey="utr" stroke="#84cc16" strokeWidth={3} dot={{r: 4, fill: '#84cc16'}} activeDot={{r: 6}} />
-                    </LineChart>
+                      </LineChart>
                     </ResponsiveContainer>
-                </div>
+                  </div>
+                )}
               </Card>
               
               {/* Match History List */}
@@ -201,11 +234,8 @@ export const Profile: React.FC = () => {
                  {allMatches.filter(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER').slice().reverse().map(match => {
                      const isWin = match.score?.winnerId === user.id;
                      const opponentId = match.playerAId === user.id ? match.playerBId : match.playerAId;
-                     const opponent = db.getUser(opponentId);
-                     const season = db.getSeasons().find(s => {
-                        const div = db.getDivision(match.divisionId || '');
-                        return div?.seasonId === s.id;
-                     });
+                     const opponent = users.find(u => u.id === opponentId);
+                     const season = getSeasonForMatch(match);
 
                      return (
                          <div key={match.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">

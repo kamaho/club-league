@@ -5,6 +5,7 @@ import { nb } from 'date-fns/locale';
 import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Smile } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { db } from '../services/db';
+import { useQuery } from '../hooks/useQuery';
 import { useAppContext } from '../context/AppContext';
 
 interface MatchCardProps {
@@ -16,20 +17,19 @@ interface MatchCardProps {
 
 export const MatchCard: React.FC<MatchCardProps> = ({ match, playerA, playerB, currentUserId }) => {
   const { t, language } = useAppContext();
-  
+  const [proposals] = useQuery(() => db.getProposals(match.id), [match.id]);
+  const proposalList = proposals ?? [];
+
   if (!playerA || !playerB) return null;
 
   const isParticipant = currentUserId === playerA.id || currentUserId === playerB.id;
   const isFriendly = match.type === MatchType.FRIENDLY;
-  
-  // Logic to determine specific display status for PROPOSED matches
+
   let isActionRequired = false;
   let isWaiting = false;
 
   if (match.status === MatchStatus.PROPOSED && isParticipant) {
-    const proposals = db.getProposals(match.id);
-    const lastProposal = proposals[proposals.length - 1];
-    
+    const lastProposal = proposalList[proposalList.length - 1];
     if (lastProposal) {
       if (lastProposal.proposedById !== currentUserId) {
         isActionRequired = true;
@@ -39,12 +39,18 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, playerA, playerB, c
     }
   }
 
+  // Friendly pending: I invited, waiting for opponent to accept
+  const isFriendlyPendingMine = isFriendly && match.status === MatchStatus.PENDING && match.playerAId === currentUserId;
+
   const getStatusConfig = (status: MatchStatus) => {
     if (isActionRequired) {
         return { color: 'text-white bg-amber-500 border-amber-600', icon: <AlertCircle size={14} />, label: t('status.actionRequired') };
     }
     if (isWaiting) {
         return { color: 'text-slate-600 bg-slate-100 border-slate-200', icon: <Clock size={14} />, label: t('status.proposalSent') };
+    }
+    if (isFriendlyPendingMine) {
+        return { color: 'text-amber-600 bg-amber-50 border-amber-100', icon: <Clock size={14} />, label: t('status.waitingForResponse') };
     }
 
     switch (status) {

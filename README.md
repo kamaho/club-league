@@ -65,6 +65,50 @@ git push -u origin main
 
 Then run through the Vercel or Netlify steps above using this repo.
 
+## Mobile app (iOS / Android) med Capacitor
+
+Prosjektet er satt opp med **Capacitor** slik at du kan bygge en native app for App Store og Google Play.
+
+### Krav
+
+- **iOS:** Mac med **Xcode** (fra App Store)
+- **Android:** **Android Studio** (valgfritt)
+
+### Bygg og åpne i Xcode (iOS)
+
+1. Bygg webappen og synk til native prosjekt:
+   ```bash
+   npm run cap:sync
+   ```
+   (Dette kjører `build:cap` og `cap sync` – bruk dette hver gang du har endret web-kode.)
+
+2. Åpne iOS-prosjektet i Xcode:
+   ```bash
+   npm run cap:ios
+   ```
+   eller åpne `ios/App/App.xcworkspace` i Xcode.
+
+3. I Xcode: velg en simulator eller en tilkoblet iPhone, og trykk **Run** (▶).
+
+4. For **App Store:** Konfigurer **Signing & Capabilities** med ditt Apple Developer-konto, arkivér (**Product → Archive**), og last opp via **Distribute App**.
+
+### Android
+
+1. `npm run cap:sync`
+2. `npm run cap:android` (åpner Android Studio)
+3. Bygg og kjør fra Android Studio, eller bygg en release-APK/AAB for Google Play.
+
+### Scripts
+
+| Script        | Beskrivelse                                      |
+|---------------|--------------------------------------------------|
+| `npm run build:cap` | Bygger webappen med base `./` for native app   |
+| `npm run cap:sync`  | Bygger + kopierer til `ios` og `android`       |
+| `npm run cap:ios`   | Åpner iOS-prosjektet i Xcode                   |
+| `npm run cap:android` | Åpner Android-prosjektet i Android Studio   |
+
+**Tips:** Etter endringer i React/Vite-koden må du kjøre `npm run cap:sync` på nytt før du kjører appen i simulator eller på enhet.
+
 ## Tech stack
 
 - **React 18** + **TypeScript**
@@ -73,5 +117,6 @@ Then run through the Vercel or Netlify steps above using this repo.
 - **Tailwind CSS**
 - **Recharts** (standings/charts)
 - **date-fns** + **lucide-react**
+- **Capacitor** (iOS + Android)
 
-Data is currently in-memory + `localStorage` (no backend required for this demo).
+Data kan bruke backend-API (se `backend/`) eller mock + `localStorage`.

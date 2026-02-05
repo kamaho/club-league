@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  role         String   @default("PLAYER") // PLAYER | ADMIN
+  clubId       String   @default("club-1")
+  avatarUrl    String?
+  utr          Float?
+  phone        String?
+  language     String?
+  preferences  String?  // JSON: UserPreferences
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  matchesAsPlayerA Match[] @relation("PlayerA")
+  matchesAsPlayerB Match[] @relation("PlayerB")
+  enrollments      Enrollment[]
+  proposals        MatchProposal[]
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  clubId    String   @default("club-1")
+  name      String
+  startDate String
+  endDate   String
+  status    String   // ACTIVE | UPCOMING | COMPLETED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  divisions Division[]
+}
+
+model Division {
+  id        String   @id @default(cuid())
+  seasonId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  season     Season      @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+  matches    Match[]
+}
+
+model Enrollment {
+  id         String   @id @default(cuid())
+  divisionId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  division Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([divisionId, userId])
+}
+
+model Match {
+  id          String    @id @default(cuid())
+  divisionId  String?
+  type        String    // LEAGUE | FRIENDLY
+  playerAId   String
+  playerBId   String
+  round       Int?
+  status      String    // PENDING | PROPOSED | SCHEDULED | REPORTED | CONFIRMED | DISPUTED | WALKOVER
+  scheduledAt DateTime?
+  score       String?   // JSON: MatchScore
+  logistics   String?   // JSON: MatchLogistics
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  division Division?         @relation(fields: [divisionId], references: [id], onDelete: SetNull)
+  playerA  User              @relation("PlayerA", fields: [playerAId], references: [id], onDelete: Cascade)
+  playerB  User              @relation("PlayerB", fields: [playerBId], references: [id], onDelete: Cascade)
+  proposals MatchProposal[]
+}
+
+model MatchProposal {
+  id            String   @id @default(cuid())
+  matchId       String
+  proposedById  String
+  proposedTimes String   // JSON: string[]
+  message       String?
+  logistics     String?  // JSON: ProposalLogistics
+  createdAt     DateTime @default(now())
+
+  match       Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  proposedBy  User  @relation(fields: [proposedById], references: [id], onDelete: Cascade)
+}
+
+model ClubSettings {
+  id      String  @id @default("club-1")
+  logoUrl String?
+}

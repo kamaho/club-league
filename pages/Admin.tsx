@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { db } from '../services/db';
+import { authService } from '../services/auth';
+import { useQuery } from '../hooks/useQuery';
+import { getApiUrl } from '../services/api';
 import { Season, User, UserRole } from '../types';
 import { 
     Plus, Calendar, Users, Settings, Search, Edit2, 
-    ChevronRight, Activity, X, Mail, Phone, Lock
+    ChevronRight, Activity, X, Mail, Phone, Lock, Copy, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -13,11 +16,14 @@ type AdminTab = 'overview' | 'seasons' | 'players' | 'settings';
 
 export const Admin: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>('seasons');
-  const seasons = db.getSeasons();
-  const users = db.getUsers();
+  const [seasonsData, , refetchSeasons] = useQuery(() => db.getSeasons(), []);
+  const [usersData, , refetchUsers] = useQuery(() => db.getUsers(), []);
+  const [clubSettingsData] = useQuery(() => db.getClubSettings(), []);
+  const seasons = seasonsData ?? [];
+  const users = usersData ?? [];
+  const clubSettings = clubSettingsData ?? { logoUrl: '' };
   const navigate = useNavigate();
 
-  // --- MODAL STATE ---
   const [isSeasonModalOpen, setIsSeasonModalOpen] = useState(false);
   const [editingSeason, setEditingSeason] = useState<Season | null>(null);
   const [seasonForm, setSeasonForm] = useState<Partial<Season>>({
@@ -27,11 +33,10 @@ export const Admin: React.FC = () => {
       status: 'UPCOMING'
   });
   
-  // Player Detail Modal
   const [selectedPlayer, setSelectedPlayer] = useState<User | null>(null);
-
-  // Settings State
-  const clubSettings = db.getClubSettings();
+  const [editingPlayer, setEditingPlayer] = useState<User | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [settings, setSettings] = useState({
       clubName: 'Metro Tennis Club',
       primaryColor: '#84cc16',
@@ -64,21 +69,78 @@ export const Admin: React.FC = () => {
       setIsSeasonModalOpen(true);
   };
 
-  const handleSaveSeason = (e: React.FormEvent) => {
+  const handleSaveSeason = async (e: React.FormEvent) => {
       e.preventDefault();
-      
       if (editingSeason) {
-          db.updateSeason(editingSeason.id, seasonForm);
+        await db.updateSeason(editingSeason.id, seasonForm);
       } else {
-          db.createSeason(seasonForm as any);
+        await db.createSeason({ name: seasonForm.name!, startDate: seasonForm.startDate!, endDate: seasonForm.endDate!, status: (seasonForm.status as 'ACTIVE' | 'UPCOMING' | 'COMPLETED') ?? 'UPCOMING' });
       }
-      
       setIsSeasonModalOpen(false);
+      refetchSeasons();
   };
 
-  const handleSaveSettings = () => {
-      db.updateClubSettings({ logoUrl: settings.logoUrl });
-      alert("Settings saved!");
+  const handleSaveSettings = async () => {
+      await db.updateClubSettings({ logoUrl: settings.logoUrl });
+      alert('Settings saved!');
+  };
+
+  const clubId = authService.getCurrentUser()?.clubId ?? users[0]?.clubId ?? 'club-1';
+  const inviteLink = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname.replace(/\/$/, '')}#/signup?club=${clubId}`
+    : '';
+
+  const handleCopyInviteLink = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+      setInviteLinkCopied(true);
+      setTimeout(() => setInviteLinkCopied(false), 2000);
+    });
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedPlayer?.email) return;
+    const base = getApiUrl();
+    if (!base) {
+      alert('Password reset is available when using the API.');
+      return;
+    }
+    try {
+      await fetch(`${base.replace(/\/$/, '')}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: selectedPlayer.email }),
+      });
+      alert(`If they have an account, reset instructions will be sent to ${selectedPlayer.email}`);
+    } catch {
+      alert('Failed to send reset. Try again.');
+    }
+  };
+
+  const handleSavePlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlayer) return;
+    await db.updateUser(editingPlayer.id, {
+      name: editingPlayer.name,
+      email: editingPlayer.email,
+      phone: editingPlayer.phone,
+    });
+    await refetchUsers();
+    setEditingPlayer(null);
+    const updated = users.find(u => u.id === editingPlayer.id);
+    if (updated) setSelectedPlayer({ ...updated, name: editingPlayer.name, email: editingPlayer.email, phone: editingPlayer.phone });
+  };
+
+  const handleDeactivatePlayer = async () => {
+    if (!selectedPlayer) return;
+    if (!window.confirm(`Deactivate ${selectedPlayer.name}? They will no longer be able to log in. This cannot be undone.`)) return;
+    try {
+      await db.deleteUser(selectedPlayer.id);
+      await refetchUsers();
+      setSelectedPlayer(null);
+    } catch {
+      alert('Failed to deactivate. Try again.');
+    }
   };
 
   // --- SUB-COMPONENTS ---
@@ -97,81 +159,92 @@ export const Admin: React.FC = () => {
       </button>
   );
 
-  const SeasonList = () => (
-      <div className="space-y-4">
-          <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-slate-800">Seasons & Ladders</h2>
-              <button 
-                onClick={openNewSeasonModal}
-                className="bg-lime-400 text-slate-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-lime-300 flex items-center gap-2 shadow-sm"
-              >
-                  <Plus size={16} /> New Season
-              </button>
-          </div>
-          
-          <div className="grid gap-4">
-            {seasons.map(season => {
-                const divisions = db.getDivisions(season.id);
-                const isActive = season.status === 'ACTIVE';
-                
-                return (
-                    <div key={season.id} className={`bg-white rounded-xl border p-5 transition-shadow hover:shadow-md ${isActive ? 'border-lime-500 ring-1 ring-lime-500' : 'border-slate-200'}`}>
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <h3 className="font-bold text-lg text-slate-900">{season.name}</h3>
-                                    {isActive && <span className="text-[10px] bg-lime-100 text-lime-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Active</span>}
-                                    {season.status === 'COMPLETED' && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Finished</span>}
-                                </div>
-                                <div className="text-sm text-slate-500 flex items-center gap-2">
-                                    <Calendar size={14} />
-                                    {new Date(season.startDate).toLocaleDateString()} - {new Date(season.endDate).toLocaleDateString()}
-                                </div>
-                            </div>
-                            <button onClick={() => openEditSeasonModal(season)} className="text-slate-400 hover:text-slate-700">
-                                <Edit2 size={20} />
-                            </button>
-                        </div>
+  const SeasonList = () => {
+    const [divisionsBySeason, setDivisionsBySeason] = React.useState<Record<string, { id: string; seasonId: string; name: string }[]>>({});
+    const [playerCountByDiv, setPlayerCountByDiv] = React.useState<Record<string, number>>({});
+    React.useEffect(() => {
+      if (!seasons.length) return;
+      (async () => {
+        const divs: Record<string, { id: string; seasonId: string; name: string }[]> = {};
+        for (const s of seasons) {
+          divs[s.id] = await db.getDivisions(s.id);
+        }
+        setDivisionsBySeason(divs);
+        const counts: Record<string, number> = {};
+        for (const arr of Object.values(divs)) {
+          for (const d of arr) {
+            const enrollments = await db.getEnrollments(d.id);
+            counts[d.id] = enrollments.length;
+          }
+        }
+        setPlayerCountByDiv(counts);
+      })();
+    }, [seasons.map(s => s.id).join(',')]);
 
-                        <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Divisions</div>
-                            {divisions.map(div => {
-                                const playerCount = db.getPlayersInDivision(div.id).length;
-                                return (
-                                    <button 
-                                      key={div.id} 
-                                      onClick={() => navigate(`/admin/divisions/${div.id}`)}
-                                      className="w-full flex justify-between items-center bg-white p-2 rounded border border-slate-200 text-sm hover:border-lime-400 hover:shadow-sm transition-all group"
-                                    >
-                                        <span className="font-bold text-slate-700 group-hover:text-slate-900">{div.name}</span>
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-xs text-slate-500 flex items-center gap-1">
-                                                <Users size={12} /> {playerCount}
-                                            </span>
-                                            <ChevronRight size={14} className="text-slate-300 group-hover:text-lime-500" />
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                            <button 
-                                onClick={() => {
-                                    const name = prompt("Enter new division name:");
-                                    if(name) {
-                                        db.createDivision(season.id, name);
-                                        navigate(0); // Refresh
-                                    }
-                                }}
-                                className="w-full py-2 text-xs font-bold text-slate-500 border border-dashed border-slate-300 rounded hover:bg-slate-100 transition-colors"
-                            >
-                                + Add Division
-                            </button>
-                        </div>
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold text-slate-800">Seasons & Ladders</h2>
+          <button type="button" onClick={openNewSeasonModal} className="bg-lime-400 text-slate-900 px-4 py-2 rounded-lg font-bold text-sm hover:bg-lime-300 flex items-center gap-2 shadow-sm">
+            <Plus size={16} /> New Season
+          </button>
+        </div>
+        <div className="grid gap-4">
+          {seasons.map(season => {
+            const divisions = divisionsBySeason[season.id] ?? [];
+            const isActive = season.status === 'ACTIVE';
+            return (
+              <div key={season.id} className={`bg-white rounded-xl border p-5 transition-shadow hover:shadow-md ${isActive ? 'border-lime-500 ring-1 ring-lime-500' : 'border-slate-200'}`}>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-lg text-slate-900">{season.name}</h3>
+                      {isActive && <span className="text-[10px] bg-lime-100 text-lime-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Active</span>}
+                      {season.status === 'COMPLETED' && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">Finished</span>}
                     </div>
-                );
-            })}
-          </div>
+                    <div className="text-sm text-slate-500 flex items-center gap-2">
+                      <Calendar size={14} />
+                      {new Date(season.startDate).toLocaleDateString()} - {new Date(season.endDate).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => openEditSeasonModal(season)} className="text-slate-400 hover:text-slate-700">
+                    <Edit2 size={20} />
+                  </button>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Divisions</div>
+                  {divisions.map(div => (
+                    <button key={div.id} type="button" onClick={() => navigate(`/admin/divisions/${div.id}`)} className="w-full flex justify-between items-center bg-white p-2 rounded border border-slate-200 text-sm hover:border-lime-400 hover:shadow-sm transition-all group">
+                      <span className="font-bold text-slate-700 group-hover:text-slate-900">{div.name}</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-xs text-slate-500 flex items-center gap-1">
+                          <Users size={12} /> {playerCountByDiv[div.id] ?? 0}
+                        </span>
+                        <ChevronRight size={14} className="text-slate-300 group-hover:text-lime-500" />
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const name = prompt('Enter new division name:');
+                      if (name) {
+                        await db.createDivision(season.id, name);
+                        refetchSeasons();
+                      }
+                    }}
+                    className="w-full py-2 text-xs font-bold text-slate-500 border border-dashed border-slate-300 rounded hover:bg-slate-100 transition-colors"
+                  >
+                    + Add Division
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-  );
+    );
+  };
 
   const PlayerManager = () => (
       <div>
@@ -186,7 +259,11 @@ export const Admin: React.FC = () => {
                         className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-lime-400"
                       />
                   </div>
-                  <button className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-800 flex items-center justify-center gap-2">
+                  <button
+                      type="button"
+                      onClick={() => setShowInviteModal(true)}
+                      className="bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-800 flex items-center justify-center gap-2"
+                  >
                       <Plus size={16} /> Invite
                   </button>
               </div>
@@ -460,16 +537,105 @@ export const Admin: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                      <button className="flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50">
+                      <button
+                          type="button"
+                          onClick={handleResetPassword}
+                          className="flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50"
+                      >
                           <Lock size={16} /> Reset Pass
                       </button>
-                      <button className="flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50">
+                      <button
+                          type="button"
+                          onClick={() => setEditingPlayer(selectedPlayer)}
+                          className="flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50"
+                      >
                            <Edit2 size={16} /> Edit
                       </button>
-                      <button className="col-span-2 flex items-center justify-center gap-2 py-3 bg-white border border-red-200 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50">
+                      <button
+                          type="button"
+                          onClick={handleDeactivatePlayer}
+                          className="col-span-2 flex items-center justify-center gap-2 py-3 bg-white border border-red-200 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50"
+                      >
                           Deactivate Account
                       </button>
                   </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- INVITE MODAL --- */}
+      {showInviteModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-xl font-bold text-slate-900">Invite players</h2>
+                      <button onClick={() => { setShowInviteModal(false); setInviteLinkCopied(false); }} className="text-slate-400 hover:text-slate-800">
+                          <X size={24} />
+                      </button>
+                  </div>
+                  <p className="text-sm text-slate-600 mb-3">Share this link so new players can sign up for your club.</p>
+                  <div className="flex gap-2">
+                      <input readOnly value={inviteLink} className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50" />
+                      <button
+                          type="button"
+                          onClick={handleCopyInviteLink}
+                          className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-bold text-sm hover:bg-slate-800"
+                      >
+                          {inviteLinkCopied ? <Check size={16} /> : <Copy size={16} />}
+                          {inviteLinkCopied ? 'Copied' : 'Copy'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- EDIT PLAYER MODAL --- */}
+      {editingPlayer && (
+          <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-xl font-bold text-slate-900">Edit player</h2>
+                      <button onClick={() => setEditingPlayer(null)} className="text-slate-400 hover:text-slate-800">
+                          <X size={24} />
+                      </button>
+                  </div>
+                  <form onSubmit={handleSavePlayer} className="space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Name</label>
+                          <input
+                              type="text"
+                              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-lime-400 outline-none"
+                              value={editingPlayer.name}
+                              onChange={(e) => setEditingPlayer({ ...editingPlayer, name: e.target.value })}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email</label>
+                          <input
+                              type="email"
+                              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-lime-400 outline-none"
+                              value={editingPlayer.email}
+                              onChange={(e) => setEditingPlayer({ ...editingPlayer, email: e.target.value })}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone</label>
+                          <input
+                              type="tel"
+                              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-lime-400 outline-none"
+                              value={editingPlayer.phone ?? ''}
+                              onChange={(e) => setEditingPlayer({ ...editingPlayer, phone: e.target.value || undefined })}
+                          />
+                      </div>
+                      <div className="flex gap-3 pt-2">
+                          <button type="button" onClick={() => setEditingPlayer(null)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50">
+                              Cancel
+                          </button>
+                          <button type="submit" className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800">
+                              Save
+                          </button>
+                      </div>
+                  </form>
               </div>
           </div>
       )}

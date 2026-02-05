@@ -1,4 +1,6 @@
 import { User, Season, Division, Match, Enrollment, UserRole, MatchStatus, MatchProposal, MatchType, MatchLogistics, ProposalLogistics } from '../types';
+import { getApiUrl } from './api';
+import { createApiDb } from './dbApi';
 
 // --- SEED DATA ---
 
@@ -71,6 +73,7 @@ const MOCK_USERS: User[] = [
     role: UserRole.PLAYER, 
     clubId: MOCK_CLUB_ID, 
     utr: 8.1,
+    phone: '+47 987 65 432',
     preferences: {
         matchFrequency: '3_per_4_weeks',
         opponentGender: 'female',
@@ -85,6 +88,7 @@ const MOCK_USERS: User[] = [
     role: UserRole.PLAYER, 
     clubId: MOCK_CLUB_ID, 
     utr: 7.0,
+    phone: '+47 555 12 345',
     preferences: {
         matchFrequency: '1_per_2_weeks',
         opponentGender: 'both',
@@ -557,4 +561,45 @@ class DatabaseService {
   }
 }
 
-export const db = new DatabaseService();
+const mockDb = new DatabaseService();
+
+/** Wrap sync mock DB so it has the same async interface as API db. */
+function wrapMock(m: DatabaseService) {
+  return {
+    getUsers: () => Promise.resolve(m.getUsers()),
+    getUser: (id: string) => Promise.resolve(m.getUser(id)),
+    getSeasons: () => Promise.resolve(m.getSeasons()),
+    getDivisions: (seasonId: string) => Promise.resolve(m.getDivisions(seasonId)),
+    getDivision: (id: string) => Promise.resolve(m.getDivision(id)),
+    getMatchesForDivision: (divisionId: string) => Promise.resolve(m.getMatchesForDivision(divisionId)),
+    getMatchesForUser: (userId: string) => Promise.resolve(m.getMatchesForUser(userId)),
+    getMatch: (id: string) => Promise.resolve(m.getMatch(id)),
+    getProposals: (matchId: string) => Promise.resolve(m.getProposals(matchId)),
+    getEnrollments: (divisionId: string) => Promise.resolve(m.getEnrollments(divisionId)),
+    getEnrollmentsForUser: (userId: string) => Promise.resolve(m.getEnrollmentsForUser(userId)),
+    getPlayersInDivision: (divisionId: string) => Promise.resolve(m.getPlayersInDivision(divisionId)),
+    getClubSettings: () => Promise.resolve(m.getClubSettings()),
+    getSeasonStatus: (currentDate: Date) => Promise.resolve(m.getSeasonStatus(currentDate)),
+    updateMatchStatus: (matchId: string, status: MatchStatus, scheduledAt?: string, logistics?: MatchLogistics) =>
+      Promise.resolve(m.updateMatchStatus(matchId, status, scheduledAt, logistics)),
+    createProposal: (matchId: string, userId: string, times: string[], message?: string, logistics?: ProposalLogistics) =>
+      Promise.resolve(m.createProposal(matchId, userId, times, message, logistics)),
+    createFriendlyMatch: (initiatorId: string, opponentId: string) => Promise.resolve(m.createFriendlyMatch(initiatorId, opponentId)),
+    submitScore: (matchId: string, score: any) => Promise.resolve(m.submitScore(matchId, score)),
+    confirmScore: (matchId: string) => Promise.resolve(m.confirmScore(matchId)),
+    updateUser: (id: string, data: Partial<User>) => Promise.resolve(m.updateUser(id, data)),
+    deleteUser: (id: string) => { m.deleteUser(id); return Promise.resolve(); },
+    createSeason: (seasonData: Omit<Season, 'id' | 'clubId'>) => Promise.resolve(m.createSeason(seasonData)),
+    updateSeason: (id: string, updates: Partial<Season>) => Promise.resolve(m.updateSeason(id, updates)),
+    updateClubSettings: (settings: any) => Promise.resolve(m.updateClubSettings(settings)),
+    createDivision: (seasonId: string, name: string) => Promise.resolve(m.createDivision(seasonId, name)),
+    enrollPlayer: (divisionId: string, userId: string) => Promise.resolve(m.enrollPlayer(divisionId, userId)),
+    removePlayerFromDivision: (divisionId: string, userId: string) => { m.removePlayerFromDivision(divisionId, userId); return Promise.resolve(); },
+    generateMatches: (divisionId: string) => Promise.resolve(m.generateMatches(divisionId)),
+  };
+}
+
+// When VITE_API_URL is set use API db (async). Otherwise wrapped mock (async interface).
+export const db = getApiUrl() ? createApiDb() : wrapMock(mockDb);
+/** Sync mock DB – use in auth when VITE_API_URL is not set. */
+export { mockDb };

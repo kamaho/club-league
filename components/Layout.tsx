@@ -5,6 +5,7 @@ import { authService } from '../services/auth';
 import { UserRole } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { db } from '../services/db';
+import { useQuery } from '../hooks/useQuery';
 import { format, addDays, differenceInCalendarDays, startOfYear } from 'date-fns';
 
 interface LayoutProps {
@@ -17,11 +18,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Context
   const { currentDate, setCurrentDate, t } = useAppContext();
-  
-  // Season & Round Logic
-  const seasons = db.getSeasons();
+  const [seasonsData] = useQuery(() => db.getSeasons(), []);
+  const seasons = seasonsData ?? [];
   const activeSeason = seasons.find(s => s.status === 'ACTIVE') || seasons[0];
   
   const seasonStartDate = activeSeason ? new Date(activeSeason.startDate) : startOfYear(currentDate);

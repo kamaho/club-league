@@ -3,6 +3,7 @@ import { Layout } from '../components/Layout';
 import { MatchCard } from '../components/MatchCard';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
+import { useQuery } from '../hooks/useQuery';
 import { MatchStatus, MatchType } from '../types';
 import { Smile, Plus, X, History, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -14,41 +15,52 @@ export const Friendlies: React.FC = () => {
   const [showFriendlyModal, setShowFriendlyModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
 
+  const [matchesData, , refetchMatches] = useQuery(() => user ? db.getMatchesForUser(user.id) : Promise.resolve([]), [user?.id]);
+  const [usersData] = useQuery(() => db.getUsers(), []);
+  const matches = (matchesData ?? []).filter(m => m.type === MatchType.FRIENDLY);
+
+  // Refetch when page is shown so new/pending friendlies appear (e.g. after creating one)
+  React.useEffect(() => {
+    refetchMatches();
+  }, [refetchMatches]);
+  const users = usersData ?? [];
+  const potentialOpponents = users.filter(u => u.id !== user?.id);
+
   if (!user) return null;
 
-  const matches = db.getMatchesForUser(user.id).filter(m => m.type === MatchType.FRIENDLY);
-  const potentialOpponents = db.getUsers().filter(u => u.id !== user.id);
-
-  // Stats
   const completed = matches.filter(m => m.status === MatchStatus.CONFIRMED || m.status === MatchStatus.REPORTED);
   const won = completed.filter(m => m.score?.winnerId === user.id).length;
   const lost = completed.length - won;
   const winRate = completed.length > 0 ? Math.round((won / completed.length) * 100) : 0;
 
-  // Lists
-  const upcoming = matches.filter(m => m.status !== MatchStatus.CONFIRMED && m.status !== MatchStatus.REPORTED && m.status !== MatchStatus.WALKOVER);
+  // Upcoming: include PENDING (waiting for response) and PROPOSED and SCHEDULED so unapproved show
+  const upcoming = matches.filter(m =>
+    m.status === MatchStatus.PENDING ||
+    m.status === MatchStatus.PROPOSED ||
+    m.status === MatchStatus.SCHEDULED ||
+    m.status === MatchStatus.DISPUTED
+  );
   const history = matches.filter(m => m.status === MatchStatus.CONFIRMED || m.status === MatchStatus.REPORTED || m.status === MatchStatus.WALKOVER);
 
-  const handleCreateFriendly = (opponentId: string) => {
-    const newMatch = db.createFriendlyMatch(user.id, opponentId);
+  const handleCreateFriendly = async (opponentId: string) => {
+    const newMatch = await db.createFriendlyMatch(user.id, opponentId);
     setShowFriendlyModal(false);
     navigate(`/match/${newMatch.id}`);
   };
 
+  const getUser = (id: string) => users.find(u => u.id === id);
+
   return (
     <Layout>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-             Friendly Matches
-           </h1>
-           <p className="text-slate-500 text-sm">Casual play & practice</p>
-        </div>
-        <button 
-           onClick={() => setShowFriendlyModal(true)}
-           className="bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition-colors"
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Friendly Matches</h1>
+        <p className="text-slate-500 text-sm mt-1">Casual play & practice</p>
+        <button
+          type="button"
+          onClick={() => setShowFriendlyModal(true)}
+          className="mt-4 w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-900/20"
         >
-            <Plus size={24} />
+          <Plus size={20} /> Start a friendly match
         </button>
       </div>
 
@@ -90,8 +102,8 @@ export const Friendlies: React.FC = () => {
               <MatchCard 
                 key={match.id} 
                 match={match} 
-                playerA={db.getUser(match.playerAId)} 
-                playerB={db.getUser(match.playerBId)}
+                playerA={getUser(match.playerAId)} 
+                playerB={getUser(match.playerBId)}
                 currentUserId={user.id}
               />
            ))
@@ -124,6 +136,12 @@ export const Friendlies: React.FC = () => {
                   <div className="space-y-4">
                       <p className="text-sm text-slate-500">Select a player to invite. These matches don't affect your league standing.</p>
                       
+                      {potentialOpponents.length === 0 && (
+                        <div className="py-6 px-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-800 text-sm">
+                          <p className="font-medium mb-1">No other players in your club yet.</p>
+                          <p className="text-xs text-amber-700">Run the backend seed to add demo users: <code className="bg-amber-100 px-1 rounded">cd backend && npx prisma db seed</code></p>
+                        </div>
+                      )}
                       <div className="max-h-80 overflow-y-auto space-y-2">
                           {potentialOpponents.map(opp => (
                               <button 

@@ -22,6 +22,9 @@ export const translations = {
     'home.viewStandings': 'View Standings',
     'home.noMatches': 'No upcoming matches scheduled.',
     'home.recentResults': 'Recent Results',
+    'home.noDivisions': 'No divisions available for this season yet. Please check back later.',
+    'home.enrollFailed': 'Could not join. Please try again.',
+    'home.joining': 'Joining…',
 
     // Matches
     'matches.title': 'Matches',
@@ -94,6 +97,7 @@ export const translations = {
     'status.walkover': 'Canceled',
     'status.actionRequired': 'Action Required',
     'status.proposalSent': 'Proposal Sent',
+    'status.waitingForResponse': 'Waiting for response',
 
     // Match Detail & Actions
     'common.round': 'Round',
@@ -117,7 +121,7 @@ export const translations = {
     'match.proposal.history': 'Proposal History',
     'match.proposal.youSent': 'You sent a proposal',
     'match.proposal.received': '{name} proposed:',
-    'match.proposal.tapToConfirm': 'Tap a time below to confirm.',
+    'match.proposal.tapToConfirm': 'Tap a time below to confirm, or suggest a new time.',
     'match.proposal.confirmBtn': 'CONFIRM',
     'match.proposal.decline': 'Decline & Propose New Times',
     'match.proposal.selectDate': '1. Select Date',
@@ -155,6 +159,9 @@ export const translations = {
     'home.viewStandings': 'Se Tabell',
     'home.noMatches': 'Ingen kommende kamper planlagt.',
     'home.recentResults': 'Nylige Resultater',
+    'home.noDivisions': 'Ingen divisjoner for denne sesongen ennå. Sjekk igjen senere.',
+    'home.enrollFailed': 'Kunne ikke melde deg på. Prøv igjen.',
+    'home.joining': 'Melder på…',
 
     // Matches
     'matches.title': 'Kamper',
@@ -227,6 +234,7 @@ export const translations = {
     'status.walkover': 'Walkover',
     'status.actionRequired': 'Handling Kreves',
     'status.proposalSent': 'Forslag Sendt',
+    'status.waitingForResponse': 'Venter på svar',
 
     // Match Detail & Actions
     'common.round': 'Runde',
@@ -250,7 +258,7 @@ export const translations = {
     'match.proposal.history': 'Forslagshistorikk',
     'match.proposal.youSent': 'Du sendte et forslag',
     'match.proposal.received': '{name} foreslo:',
-    'match.proposal.tapToConfirm': 'Trykk på en tid under for å bekrefte.',
+    'match.proposal.tapToConfirm': 'Trykk på en tid under for å bekrefte, eller foreslå nytt tidspunkt.',
     'match.proposal.confirmBtn': 'BEKREFT',
     'match.proposal.decline': 'Avslå & Foreslå Nye Tider',
     'match.proposal.selectDate': '1. Velg Dato',

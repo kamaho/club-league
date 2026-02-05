@@ -3,67 +3,68 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { db } from '../services/db';
+import { useQuery } from '../hooks/useQuery';
 import { ChevronLeft, Plus, Trash2, Search, RefreshCw, X, UserPlus } from 'lucide-react';
 
 export const AdminDivision: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    
-    // Division Data
-    const division = db.getDivision(id || '');
-    const season = division ? db.getSeasons().find(s => s.id === division.seasonId) : null;
-    
-    // Participants
-    const enrolledPlayers = db.getPlayersInDivision(id || '');
-    
-    // Available Players (Not enrolled)
-    const allUsers = db.getUsers();
-    const availablePlayers = allUsers.filter(u => !enrolledPlayers.find(ep => ep.id === u.id));
+    const divisionId = id || '';
 
-    // State for searching players to add
+    const [divisionData] = useQuery(() => db.getDivision(divisionId), [divisionId]);
+    const [seasonsData] = useQuery(() => db.getSeasons(), []);
+    const [enrolledPlayersData, , refetchPlayers] = useQuery(() => db.getPlayersInDivision(divisionId), [divisionId]);
+    const [allUsersData] = useQuery(() => db.getUsers(), []);
+    const [matchesData] = useQuery(() => db.getMatchesForDivision(divisionId), [divisionId]);
+
+    const division = divisionData ?? null;
+    const seasons = seasonsData ?? [];
+    const season = division ? (seasons.find(s => s.id === division.seasonId) ?? null) : null;
+    const enrolledPlayers = enrolledPlayersData ?? [];
+    const allUsers = allUsersData ?? [];
+    const availablePlayers = allUsers.filter(u => !enrolledPlayers.find(ep => ep.id === u.id));
+    const divisionMatches = matchesData ?? [];
+
     const [isAddMode, setIsAddMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     if (!division || !season) return <Layout><div>Division not found</div></Layout>;
 
-    // Filter available players based on search
     const filteredAvailablePlayers = availablePlayers.filter(p => 
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         p.email.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const handleAddPlayer = (userId: string) => {
-        db.enrollPlayer(division.id, userId);
-        // Don't close mode immediately to allow multiple adds, but refresh data
-        navigate(0); 
+    const handleAddPlayer = async (userId: string) => {
+        await db.enrollPlayer(division.id, userId);
+        refetchPlayers();
     };
 
-    const handleAddAll = () => {
+    const handleAddAll = async () => {
         if (filteredAvailablePlayers.length === 0) return;
-        
         if (window.confirm(`Are you sure you want to add all ${filteredAvailablePlayers.length} visible players to this division?`)) {
-            filteredAvailablePlayers.forEach(p => db.enrollPlayer(division.id, p.id));
+            for (const p of filteredAvailablePlayers) await db.enrollPlayer(division.id, p.id);
             setIsAddMode(false);
-            navigate(0);
+            refetchPlayers();
         }
     };
 
-    const handleRemovePlayer = (userId: string) => {
-        if(window.confirm('Remove this player from the division?')) {
-            db.removePlayerFromDivision(division.id, userId);
-            navigate(0);
+    const handleRemovePlayer = async (userId: string) => {
+        if (window.confirm('Remove this player from the division?')) {
+            await db.removePlayerFromDivision(division.id, userId);
+            refetchPlayers();
         }
     };
 
-    const handleGenerateSchedule = () => {
+    const handleGenerateSchedule = async () => {
         if (enrolledPlayers.length < 2) {
-            alert("Need at least 2 players to generate a schedule.");
+            alert('Need at least 2 players to generate a schedule.');
             return;
         }
         if (window.confirm(`Generate round-robin matches for ${enrolledPlayers.length} players? This will replace any pending unplayed matches.`)) {
-            const matches = db.generateMatches(division.id);
+            const matches = await db.generateMatches(division.id);
             alert(`Generated ${matches.length} matches!`);
-            navigate('/matches'); 
+            navigate('/matches');
         }
     };
 
@@ -206,7 +207,7 @@ export const AdminDivision: React.FC = () => {
                         <div className="text-center py-4">
                              {/* Quick Stat check */}
                              <div className="text-3xl font-black text-slate-900">
-                                 {db.getMatchesForDivision(division.id).length}
+                                 {divisionMatches.length}
                              </div>
                              <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Matches Created</div>
                              

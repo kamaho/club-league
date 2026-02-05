@@ -1,40 +1,53 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { authService } from '../services/auth';
+import { getApiUrl } from '../services/api';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState(''); // Mock password field
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const useApi = !!getApiUrl();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // Simulate network delay
-    setTimeout(() => {
-        const user = authService.login(email);
-        if (user) {
-            navigate('/');
-        } else {
-            setError('User not found. Try "bob@club.com"');
-            setIsLoading(false);
-        }
-    }, 800);
+    setError('');
+    try {
+      const user = await authService.login(email, password);
+      if (user) {
+        // Use full navigation so app remounts with user in storage (avoids white screen after login)
+        const base = window.location.pathname.replace(/\/$/, '') || '/';
+        window.location.assign(`${base}#/`);
+        return;
+      } else {
+        setError('Invalid email or password. Demo: admin@club.com / demo123');
+      }
+    } catch {
+      setError('Login failed. Try admin@club.com / demo123');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSSO = (provider: 'google' | 'apple') => {
-      setIsLoading(true);
-      authService.loginWithProvider(provider).then(() => {
-          navigate('/');
-      });
+    if (useApi) {
+      setError('Sign in with Google and Apple is coming soon. Use email and password for now.');
+      return;
+    }
+    setIsLoading(true);
+    authService.loginWithProvider(provider).then(() => {
+      const base = window.location.pathname.replace(/\/$/, '') || '/';
+      window.location.assign(`${base}#/`);
+    }).finally(() => {
+      setIsLoading(false);
+    });
   };
 
-  const quickFill = (val: string) => {
+  const quickFill = (val: string, pwd: string = 'demo123') => {
     setEmail(val);
-    setPassword('password123');
+    setPassword(pwd);
     setError('');
   };
 
@@ -123,10 +136,10 @@ export const Login: React.FC = () => {
         <div className="mt-8 pt-6 border-t border-slate-100">
           <p className="text-[10px] text-slate-400 font-bold tracking-widest uppercase mb-3 text-center">DEMO ACCOUNTS</p>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => quickFill('bob@club.com')} className="text-xs bg-slate-100 hover:bg-slate-200 py-2 rounded text-slate-600 font-medium">
+            <button onClick={() => quickFill('bob@club.com')} type="button" className="text-xs bg-slate-100 hover:bg-slate-200 py-2 rounded text-slate-600 font-medium">
               Player (Bob)
             </button>
-            <button onClick={() => quickFill('admin@club.com')} className="text-xs bg-slate-100 hover:bg-slate-200 py-2 rounded text-slate-600 font-medium">
+            <button onClick={() => quickFill('admin@club.com')} type="button" className="text-xs bg-slate-100 hover:bg-slate-200 py-2 rounded text-slate-600 font-medium">
               Admin (Alice)
             </button>
           </div>

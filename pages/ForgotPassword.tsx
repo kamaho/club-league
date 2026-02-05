@@ -1,21 +1,41 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Mail, CheckCircle } from 'lucide-react';
+import { getApiUrl } from '../services/api';
+
+async function requestPasswordReset(email: string): Promise<void> {
+  const base = getApiUrl();
+  if (!base) {
+    await new Promise((r) => setTimeout(r, 1500));
+    return;
+  }
+  const url = `${base.replace(/\/$/, '')}/api/auth/forgot-password`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new Error('Request failed');
+}
 
 export const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [isSent, setIsSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // Simulate backend call
-    setTimeout(() => {
-        setIsSent(true);
-        setIsLoading(false);
-    }, 1500);
+    setError('');
+    try {
+      await requestPasswordReset(email);
+      setIsSent(true);
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -42,6 +62,9 @@ export const ForgotPassword: React.FC = () => {
             </div>
         ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>
+            )}
             <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
                 <div className="relative">

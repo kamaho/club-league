@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { ChevronLeft, Check, Camera, Search, Briefcase } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -9,6 +9,8 @@ import { UserPreferences } from '../types';
 export const Signup: React.FC = () => {
   const { t, language, setLanguage } = useAppContext();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const clubFromUrl = searchParams.get('club') ?? '';
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -17,8 +19,9 @@ export const Signup: React.FC = () => {
       name: '',
       email: '',
       password: '',
+      phone: '',
       avatarUrl: '',
-      clubId: '',
+      clubId: clubFromUrl,
       utr: 1.0,
       preferences: {
           matchFrequency: '1_per_2_weeks',
@@ -51,11 +54,13 @@ export const Signup: React.FC = () => {
       setFormData(prev => ({ ...prev, utr: parseFloat(estimated.toFixed(1)) }));
   }, [skillAnswers]);
 
-  // --- CLUBS (MOCK) ---
+  // --- CLUBS (real tennis clubs in Norway / nærområdet) ---
   const clubs = [
-      { id: 'club-1', name: 'Metro Tennis Club', city: 'Oslo' },
-      { id: 'club-2', name: 'Ace Tennis Academy', city: 'Bergen' },
-      { id: 'club-3', name: 'Royal Court Club', city: 'Stavanger' }
+      { id: 'club-1', name: 'Oslo Tennisklubb (OTK)', city: 'Oslo' },
+      { id: 'club-2', name: 'Bergens Tennisklubb (BTK)', city: 'Bergen' },
+      { id: 'club-3', name: 'Stavanger Tennisklubb', city: 'Stavanger' },
+      { id: 'club-4', name: 'Trondheim Tennisklubb', city: 'Trondheim' },
+      { id: 'club-5', name: 'Kristiansand Tennisklubb', city: 'Kristiansand' }
   ];
 
   // --- HANDLERS ---
@@ -65,11 +70,14 @@ export const Signup: React.FC = () => {
 
   const handleRegister = async () => {
     setIsLoading(true);
-    // Simulate API delay
-    await new Promise(r => setTimeout(r, 1000));
-    
-    authService.register(formData);
-    navigate('/');
+    try {
+      await authService.register(formData);
+      navigate('/');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // --- RENDER STEPS ---
@@ -119,6 +127,17 @@ export const Signup: React.FC = () => {
               placeholder="you@example.com"
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{language === 'no' ? 'Mobilnummer' : 'Phone number'}</label>
+            <input
+              type="tel"
+              required
+              className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-lime-400 outline-none"
+              placeholder={language === 'no' ? 'f.eks. 123 45 678' : 'e.g. +47 123 45 678'}
+              value={formData.phone}
+              onChange={(e) => setFormData({...formData, phone: e.target.value})}
             />
           </div>
           <div>
@@ -367,8 +386,12 @@ export const Signup: React.FC = () => {
             {step < 4 ? (
                 <button 
                     onClick={() => {
+                        if (step === 1 && !formData.phone?.trim()) {
+                            alert(language === 'no' ? 'Vennligst oppgi mobilnummer.' : 'Please enter your phone number.');
+                            return;
+                        }
                         if (step === 2 && !formData.clubId) {
-                            alert("Please select a club");
+                            alert(language === 'no' ? 'Vennligst velg en klubb.' : 'Please select a club.');
                             return;
                         }
                         nextStep();

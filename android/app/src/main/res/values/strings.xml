@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Club League</string>
+    <string name="title_activity_main">Club League</string>
+    <string name="package_name">com.kamaho.clubleague</string>
+    <string name="custom_url_scheme">com.kamaho.clubleague</string>
+</resources>

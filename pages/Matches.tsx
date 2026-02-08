@@ -373,14 +373,14 @@ export const Matches: React.FC = () => {
     <Layout>
       <div className="mt-8 mb-4">
         <div className="bg-slate-100 p-1 rounded-lg flex flex-nowrap overflow-x-auto">
+          <button type="button" onClick={() => setViewMode('all')} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 ${viewMode === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            <Calendar size={14} /> {t('matches.filter.all')}
+          </button>
           <button type="button" onClick={() => setViewMode('league')} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 ${viewMode === 'league' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <Trophy size={14} /> {t('matches.filter.league')}
           </button>
           <button type="button" onClick={() => setViewMode('friendlies')} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 ${viewMode === 'friendlies' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <Smile size={14} /> {t('matches.filter.friendlies')}
-          </button>
-          <button type="button" onClick={() => setViewMode('all')} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 ${viewMode === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            <Calendar size={14} /> {t('matches.filter.all')}
           </button>
         </div>
       </div>
@@ -457,6 +457,9 @@ export const Matches: React.FC = () => {
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-200 border border-green-300" /> {t('matches.tab.played')}</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-200 border border-slate-300" /> {t('matches.tab.canceled')}</span>
           </div>
+          <p className="mt-4 text-xs text-slate-500 text-center max-w-md mx-auto">
+            {t('matches.calendar.helpText')}
+          </p>
         </div>
 
       {/* Stepper modal: plan friendly or ladder request */}

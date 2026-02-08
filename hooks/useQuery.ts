@@ -10,7 +10,7 @@ export function useQuery<T>(loader: () => Promise<T>, deps: unknown[] = []): [T 
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, deps);
+  }, [...deps]);
 
   useEffect(() => {
     refetch();

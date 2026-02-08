@@ -404,7 +404,7 @@ export const Home: React.FC = () => {
         )}
 
         {/* Spillere du møter denne runden – send forespørsel direkte */}
-        <section>
+        <section className="pb-8">
           <h2 className="text-sm font-bold text-slate-800 mb-0.5">{t('dashboard.thisRoundTitle')}</h2>
           <div className="flex items-center gap-2 mb-2">
             <button

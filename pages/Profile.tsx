@@ -4,7 +4,7 @@ import { Card } from '../components/Card';
 import { authService } from '../services/auth';
 import { db } from '../services/db';
 import { useQuery } from '../hooks/useQuery';
-import { Mail, Phone, Trash2, Save, Calendar, PauseCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Mail, Phone, Trash2, Save, Calendar, PauseCircle, XCircle, RotateCcw, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { User as UserType } from '../types';
 import { useAppContext } from '../context/AppContext';
@@ -18,6 +18,7 @@ export const Profile: React.FC = () => {
 
   const [user, setUser] = useState<UserType | undefined>(currentUser);
   const [editForm, setEditForm] = useState<UserType>(currentUser || {} as any);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -47,12 +48,20 @@ export const Profile: React.FC = () => {
     setEditForm({ ...user } as UserType);
   };
 
-  const handleDeleteAccount = async () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      await db.deleteUser(user.id);
-      authService.logout();
-      navigate('/login');
-    }
+  const handleDeleteAccount = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteAccountConfirm = async () => {
+    setShowDeleteConfirm(false);
+    await db.deleteUser(user.id);
+    authService.logout();
+    navigate('/login');
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    navigate('/login');
   };
 
   const handleCancelSeason = async () => {
@@ -257,16 +266,52 @@ export const Profile: React.FC = () => {
                 </div>
               </Card>
 
-              {/* Danger Zone */}
-              <div className="mt-8 pt-6 border-t border-slate-200 pb-8">
+              {/* Logout – tydelig hovedknapp nederst */}
+              <div className="mt-8 pt-6 border-t border-slate-200 pt-8 pb-4">
+                    <button 
+                        onClick={handleLogout}
+                        className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-bold hover:bg-slate-800 flex items-center justify-center gap-2 transition-colors shadow-lg"
+                    >
+                        <LogOut size={20} />
+                        {t('nav.logout')}
+                    </button>
+              </div>
+
+              {/* Danger zone – lite synlig, krever bekreftelse */}
+              <div className="pt-2 pb-8">
+                    <p className="text-xs text-slate-400 uppercase tracking-wider mb-2">{t('profile.dangerZone')}</p>
                     <button 
                         onClick={handleDeleteAccount}
-                        className="w-full bg-white border border-red-200 text-red-600 py-3 rounded-lg font-medium hover:bg-red-50 flex items-center justify-center gap-2 transition-colors"
+                        className="text-sm text-slate-400 hover:text-red-600 transition-colors flex items-center gap-2"
                     >
-                        <Trash2 size={18} />
+                        <Trash2 size={14} />
                         {t('profile.deleteAccount')}
                     </button>
               </div>
+
+              {/* Bekreftelsesmodal for sletting */}
+              {showDeleteConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDeleteConfirm(false)}>
+                  <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 border border-slate-200" onClick={(e) => e.stopPropagation()}>
+                    <h3 className="text-lg font-bold text-slate-900 mb-2">{t('profile.deleteConfirmTitle')}</h3>
+                    <p className="text-sm text-slate-600 mb-6">{t('profile.deleteConfirmMessage')}</p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 py-2.5 rounded-lg font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                      >
+                        {t('profile.deleteCancel')}
+                      </button>
+                      <button
+                        onClick={handleDeleteAccountConfirm}
+                        className="flex-1 py-2.5 rounded-lg font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+                      >
+                        {t('profile.deleteConfirmBtn')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* UNSAVED CHANGES FLOATING BAR */}
               {hasChanges && (

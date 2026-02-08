@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "cap:sync": "npm run build:cap && npx cap sync",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "deploy:quick": "npm run build && cp vercel.static.json dist/vercel.json && (cp -r .vercel dist/ 2>/dev/null || true) && cd dist && npx vercel --prod --yes"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",

@@ -24,3 +24,4 @@ backend/prisma/*.db
 *.njsproj
 *.sln
 *.sw?
+.vercel

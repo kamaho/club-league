@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { ChevronLeft, Mail, CheckCircle } from 'lucide-react';
 import { getApiUrl } from '../services/api';
+import { authService } from '../services/auth';
 
 async function requestPasswordReset(email: string): Promise<void> {
   const base = getApiUrl();
@@ -23,6 +24,10 @@ export const ForgotPassword: React.FC = () => {
   const [isSent, setIsSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  if (authService.getCurrentUser()) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

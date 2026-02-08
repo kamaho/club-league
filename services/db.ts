@@ -1,10 +1,18 @@
-import { User, Season, Division, Match, Enrollment, UserRole, MatchStatus, MatchProposal, MatchType, MatchLogistics, ProposalLogistics } from '../types';
+import { User, Season, Division, Match, Enrollment, UserRole, MatchStatus, MatchProposal, MatchType, MatchLogistics, ProposalLogistics, Club, ClubActivityRankEntry } from '../types';
 import { getApiUrl } from './api';
 import { createApiDb } from './dbApi';
 
 // --- SEED DATA ---
 
 const MOCK_CLUB_ID = 'club-1';
+
+const MOCK_CLUBS: Club[] = [
+  { id: 'club-1', name: 'Oslo Tennisklubb (OTK)', city: 'Oslo' },
+  { id: 'club-2', name: 'Bergens Tennisklubb (BTK)', city: 'Bergen' },
+  { id: 'club-3', name: 'Stavanger Tennisklubb', city: 'Stavanger' },
+  { id: 'club-4', name: 'Trondheim Tennisklubb', city: 'Trondheim' },
+  { id: 'club-5', name: 'Kristiansand Tennisklubb', city: 'Kristiansand' },
+];
 
 const MOCK_USERS: User[] = [
   { 
@@ -96,6 +104,8 @@ const MOCK_USERS: User[] = [
         skipNextRound: false
     }
   },
+  { id: 'u6', email: 'test@test.no', name: 'Test User', role: UserRole.PLAYER, clubId: MOCK_CLUB_ID, utr: 6.0, preferences: { matchFrequency: '1_per_2_weeks', opponentGender: 'both', availability: {}, skipNextRound: false } },
+  { id: 'u7', email: 'h0lst@icloud.com', name: 'Holst', role: UserRole.PLAYER, clubId: MOCK_CLUB_ID, utr: 6.0, preferences: { matchFrequency: '1_per_2_weeks', opponentGender: 'both', availability: {}, skipNextRound: false } },
 ];
 
 const MOCK_SEASONS: Season[] = [
@@ -118,8 +128,28 @@ const MOCK_ENROLLMENTS: Enrollment[] = [
   // Summer Enrollments
   { id: 'e1', divisionId: 'd1', userId: 'u2' }, // Bob
   { id: 'e2', divisionId: 'd1', userId: 'u3' }, // Charlie
+  { id: 'e6', divisionId: 'd1', userId: 'u6' }, // test@test.no
+  { id: 'e7', divisionId: 'd1', userId: 'u7' }, // h0lst@icloud.com
   { id: 'e3', divisionId: 'd1', userId: 'u4' }, // Diana
   { id: 'e4', divisionId: 'd1', userId: 'u5' }, // Evan
+];
+
+// Runde 45 – spillere test user (u6) skal møte; injiseres alltid ved load
+const ROUND_45_DEMO_MATCHES: Match[] = [
+  { id: 'm-r45-1', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u2', round: 45, status: MatchStatus.PENDING, createdAt: '2024-06-01T00:00:00Z' },
+  { id: 'm-r45-2', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u3', playerBId: 'u6', round: 45, status: MatchStatus.PENDING, createdAt: '2024-06-01T00:00:00Z' },
+  { id: 'm-r45-3', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u4', round: 45, status: MatchStatus.PENDING, createdAt: '2024-06-01T00:00:00Z' },
+];
+
+// Demokamper 12. feb 2026 (flere statuser i én celle) – injiseres alltid ved load
+const DEMO_DAY_MATCHES: Match[] = [
+  { id: 'demo-open1', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u2', round: 6, status: MatchStatus.PENDING, scheduledAt: '2026-02-12T10:00:00Z', createdAt: '2026-02-01T00:00:00Z' },
+  { id: 'demo-open2', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u3', playerBId: 'u6', round: 6, status: MatchStatus.PROPOSED, scheduledAt: '2026-02-12T12:00:00Z', createdAt: '2026-02-02T00:00:00Z' },
+  { id: 'demo-planned', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u4', round: 6, status: MatchStatus.SCHEDULED, scheduledAt: '2026-02-12T14:00:00Z', createdAt: '2026-02-01T00:00:00Z' },
+  { id: 'demo-played', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u5', playerBId: 'u6', round: 5, status: MatchStatus.CONFIRMED, scheduledAt: '2026-02-12T16:00:00Z', createdAt: '2026-02-01T00:00:00Z', score: { winnerId: 'u6', sets: [{ scoreA: 6, scoreB: 4 }, { scoreA: 6, scoreB: 3 }] } },
+  { id: 'demo-canceled', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u1', round: 6, status: MatchStatus.WALKOVER, scheduledAt: '2026-02-12T18:00:00Z', createdAt: '2026-02-01T00:00:00Z' },
+  // Planlagt kamp 25. feb 2026 – for testing av live-scoring
+  { id: 'demo-feb25', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u7', round: 6, status: MatchStatus.SCHEDULED, scheduledAt: '2026-02-25T10:00:00Z', createdAt: '2026-02-01T00:00:00Z' },
 ];
 
 const MOCK_MATCHES: Match[] = [
@@ -207,7 +237,32 @@ const MOCK_MATCHES: Match[] = [
     id: 'f1', type: MatchType.FRIENDLY, playerAId: 'u2', playerBId: 'u1', status: MatchStatus.CONFIRMED,
     scheduledAt: '2024-05-15T10:00:00Z', createdAt: '2024-05-10T00:00:00Z',
     score: { winnerId: 'u2', sets: [{scoreA: 6, scoreB: 0}, {scoreA: 6, scoreB: 1}]}
-  }
+  },
+
+  // (Runde 45-demokamper injiseres via ROUND_45_DEMO_MATCHES i loadFromStorage)
+
+  // --- DEMO: test@test.no (u6) og h0lst@icloud.com (u7) – alle flyt ---
+  // Incoming proposal (u6 må svare): Holst (u7) har foreslått kamp
+  { id: 'm-d1', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u7', playerBId: 'u6', round: 2, status: MatchStatus.PROPOSED, createdAt: '2024-06-14T08:00:00Z' },
+  // Outgoing proposal (u6 venter): test foreslo til Bob
+  { id: 'm-d2', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u2', round: 3, status: MatchStatus.PROPOSED, createdAt: '2024-06-12T10:00:00Z' },
+  // Pending (ingen forespørsel ennå)
+  { id: 'm-d3', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u4', round: 4, status: MatchStatus.PENDING, createdAt: '2024-06-01T00:00:00Z' },
+  // Scheduled (avtalt tid)
+  { id: 'm-d4', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u3', round: 1, status: MatchStatus.SCHEDULED, scheduledAt: '2024-07-01T18:00:00Z', createdAt: '2024-06-01T00:00:00Z', logistics: { courtNumber: 1, bookedById: 'u6', cost: 15, splitType: 'SPLIT', isSettled: true } },
+  // Confirmed – u6 vant
+  { id: 'm-d5', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u6', playerBId: 'u5', round: 1, status: MatchStatus.CONFIRMED, scheduledAt: '2024-06-08T10:00:00Z', createdAt: '2024-06-01T00:00:00Z', score: { winnerId: 'u6', sets: [{ scoreA: 6, scoreB: 4 }, { scoreA: 7, scoreB: 5 }] } },
+  // Confirmed – u6 tapte
+  { id: 'm-d6', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u7', playerBId: 'u6', round: 1, status: MatchStatus.CONFIRMED, scheduledAt: '2024-06-01T14:00:00Z', createdAt: '2024-05-28T00:00:00Z', score: { winnerId: 'u7', sets: [{ scoreA: 6, scoreB: 2 }, { scoreA: 6, scoreB: 3 }] } },
+  // Walkover (u7 gav walkover til u2)
+  { id: 'm-d7', divisionId: 'd1', type: MatchType.LEAGUE, playerAId: 'u7', playerBId: 'u2', round: 5, status: MatchStatus.WALKOVER, createdAt: '2024-06-01T00:00:00Z' },
+  // Friendly – fullført
+  { id: 'f-d1', type: MatchType.FRIENDLY, playerAId: 'u6', playerBId: 'u7', status: MatchStatus.CONFIRMED, scheduledAt: '2024-05-20T09:00:00Z', createdAt: '2024-05-18T00:00:00Z', score: { winnerId: 'u6', sets: [{ scoreA: 6, scoreB: 3 }, { scoreA: 6, scoreB: 4 }] } },
+  // Friendly – planlagt
+  { id: 'f-d2', type: MatchType.FRIENDLY, playerAId: 'u6', playerBId: 'u1', status: MatchStatus.SCHEDULED, scheduledAt: '2024-07-10T17:00:00Z', createdAt: '2024-06-20T00:00:00Z' },
+
+  // --- SAMME DAG, FLERE STATUSER (demo for kalendercelle) – 12. feb 2026, alle med u6 ---
+  ...DEMO_DAY_MATCHES,
 ];
 
 const MOCK_PROPOSALS: MatchProposal[] = [
@@ -236,6 +291,22 @@ const MOCK_PROPOSALS: MatchProposal[] = [
       splitType: 'SPLIT',
       courtNumber: 2
     }
+  },
+  // Holst (u7) foreslår kamp til test (u6) – INCOMING for test@test.no
+  {
+    id: 'p-d1', matchId: 'm-d1', proposedById: 'u7',
+    proposedTimes: ['2024-06-28T10:00:00Z', '2024-06-29T18:00:00Z'],
+    message: 'Hei, passer en av disse tidene for round 2?',
+    createdAt: '2024-06-14T08:00:00Z',
+    logistics: { bookedById: 'u7', cost: 20, splitType: 'SPLIT', courtNumber: 2 }
+  },
+  // test (u6) foreslo til Bob – OUTGOING for test@test.no
+  {
+    id: 'p-d2', matchId: 'm-d2', proposedById: 'u6',
+    proposedTimes: ['2024-07-05T14:00:00Z', '2024-07-06T10:00:00Z'],
+    message: 'Klar for round 3? Forslag til tid under.',
+    createdAt: '2024-06-12T10:00:00Z',
+    logistics: { bookedById: 'u6', cost: 18, splitType: 'SPLIT', courtNumber: 4 }
   }
 ];
 
@@ -259,6 +330,7 @@ class DatabaseService {
   private enrollments = MOCK_ENROLLMENTS;
   private matches = MOCK_MATCHES;
   private proposals = MOCK_PROPOSALS;
+  private clubs = MOCK_CLUBS;
   private settings = {
       logoUrl: ''
   };
@@ -286,6 +358,21 @@ class DatabaseService {
           // Initialize storage with mock data
           this.saveToStorage();
       }
+      // Alltid ha demokampene 12. feb 2026 i listen (flere statuser i én celle)
+      const existingIds = new Set(this.matches.map(m => m.id));
+      for (const m of DEMO_DAY_MATCHES) {
+          if (!existingIds.has(m.id)) {
+              this.matches = [...this.matches, m];
+              existingIds.add(m.id);
+          }
+      }
+      // Alltid ha runde 45-demokamper (spillere du møter) for test user
+      for (const m of ROUND_45_DEMO_MATCHES) {
+          if (!existingIds.has(m.id)) {
+              this.matches = [...this.matches, m];
+              existingIds.add(m.id);
+          }
+      }
   }
 
   private saveToStorage() {
@@ -304,7 +391,31 @@ class DatabaseService {
   // READ
   getUsers() { return this.users; }
   getUser(id: string) { return this.users.find(u => u.id === id); }
+  getClub(id: string) { return this.clubs.find(c => c.id === id) ?? null; }
   getSeasons() { return this.seasons; }
+
+  /** Rank spillere i en klubb etter antall fullførte kamper (aktivitet). */
+  getClubActivityRanking(clubId: string): ClubActivityRankEntry[] {
+    const clubUserIds = new Set(this.users.filter(u => u.clubId === clubId).map(u => u.id));
+    const completed = this.matches.filter(
+      m =>
+        (m.status === MatchStatus.CONFIRMED || m.status === MatchStatus.WALKOVER) &&
+        clubUserIds.has(m.playerAId) &&
+        clubUserIds.has(m.playerBId)
+    );
+    const countByUser: Record<string, number> = {};
+    clubUserIds.forEach(id => { countByUser[id] = 0; });
+    completed.forEach(m => {
+      countByUser[m.playerAId]++;
+      countByUser[m.playerBId]++;
+    });
+    const sorted = [...clubUserIds].sort((a, b) => (countByUser[b] ?? 0) - (countByUser[a] ?? 0));
+    return sorted.map((userId, i) => ({
+      userId,
+      completedMatches: countByUser[userId] ?? 0,
+      rank: i + 1,
+    }));
+  }
   getDivisions(seasonId: string) { return this.divisions.filter(d => d.seasonId === seasonId); }
   
   getDivision(id: string) { return this.divisions.find(d => d.id === id); }
@@ -335,22 +446,28 @@ class DatabaseService {
     const season = this.seasons.find(s => s.status === 'ACTIVE') || this.seasons[0];
     if (!season) return null;
 
+    // Find max round in matches to determine total rounds (approximate for MVP)
+    const allRounds = this.matches.filter(m => m.type === MatchType.LEAGUE).map(m => m.round || 0);
+    const maxRound = allRounds.length > 0 ? Math.max(...allRounds) : 5;
+
+    // Demo: when using local mock and we have round 45 matches, show active round 45 so "Spillere du møter" demo works
+    const hasRound45 = allRounds.some(r => r === 45);
+    if (!getApiUrl() && hasRound45) {
+      return {
+        activeRound: 45,
+        totalRounds: Math.max(maxRound, 50),
+        roundsLeft: Math.max(0, Math.max(maxRound, 50) - 45),
+        status: 'Active'
+      };
+    }
+
     const startDate = new Date(season.startDate);
     const msPerDay = 1000 * 60 * 60 * 24;
     const daysDiff = Math.floor((currentDate.getTime() - startDate.getTime()) / msPerDay);
-    
-    // 2 weeks per round
     const roundDurationDays = 14;
-    
-    // If before start
-    if (daysDiff < 0) return { activeRound: 0, totalRounds: 0, roundsLeft: 0, status: 'Not Started' };
+    if (daysDiff < 0) return { activeRound: 0, totalRounds: maxRound, roundsLeft: 0, status: 'Not Started' };
 
     const activeRound = Math.floor(daysDiff / roundDurationDays) + 1;
-    
-    // Find max round in matches to determine total rounds (approximate for MVP)
-    const allRounds = this.matches.filter(m => m.type === MatchType.LEAGUE).map(m => m.round || 0);
-    const maxRound = allRounds.length > 0 ? Math.max(...allRounds) : 5; // Default to 5 if no matches
-    
     const roundsLeft = Math.max(0, maxRound - activeRound);
 
     return {
@@ -402,28 +519,29 @@ class DatabaseService {
     return proposal;
   }
 
-  createFriendlyMatch(initiatorId: string, opponentId: string) {
+  createFriendlyMatch(initiatorId: string, opponentId: string, scheduledAt?: string) {
     const newMatch: Match = {
       id: `f-${Math.random().toString(36).substr(2, 9)}`,
       type: MatchType.FRIENDLY,
       playerAId: initiatorId,
       playerBId: opponentId,
       status: MatchStatus.PENDING,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(scheduledAt && { scheduledAt }),
     };
     this.matches = [newMatch, ...this.matches];
     this.saveToStorage();
     return newMatch;
   }
 
-  submitScore(matchId: string, score: any) {
-    const match = this.getMatch(matchId);
-    if (match) {
-      match.score = score;
-      match.status = MatchStatus.REPORTED;
-      this.saveToStorage();
-    }
-    return match;
+  submitScore(matchId: string, score: { sets: { scoreA: number; scoreB: number; tiebreakA?: number; tiebreakB?: number }[]; winnerId: string }) {
+    const idx = this.matches.findIndex(m => m.id === matchId);
+    if (idx === -1) return undefined;
+    const match = this.matches[idx];
+    const updated = { ...match, score, status: MatchStatus.REPORTED };
+    this.matches = this.matches.slice(0, idx).concat(updated, this.matches.slice(idx + 1));
+    this.saveToStorage();
+    return updated;
   }
 
   confirmScore(matchId: string) {
@@ -568,6 +686,8 @@ function wrapMock(m: DatabaseService) {
   return {
     getUsers: () => Promise.resolve(m.getUsers()),
     getUser: (id: string) => Promise.resolve(m.getUser(id)),
+    getClub: (id: string) => Promise.resolve(m.getClub(id)),
+    getClubActivityRanking: (clubId: string) => Promise.resolve(m.getClubActivityRanking(clubId)),
     getSeasons: () => Promise.resolve(m.getSeasons()),
     getDivisions: (seasonId: string) => Promise.resolve(m.getDivisions(seasonId)),
     getDivision: (id: string) => Promise.resolve(m.getDivision(id)),
@@ -584,7 +704,7 @@ function wrapMock(m: DatabaseService) {
       Promise.resolve(m.updateMatchStatus(matchId, status, scheduledAt, logistics)),
     createProposal: (matchId: string, userId: string, times: string[], message?: string, logistics?: ProposalLogistics) =>
       Promise.resolve(m.createProposal(matchId, userId, times, message, logistics)),
-    createFriendlyMatch: (initiatorId: string, opponentId: string) => Promise.resolve(m.createFriendlyMatch(initiatorId, opponentId)),
+    createFriendlyMatch: (initiatorId: string, opponentId: string, scheduledAt?: string) => Promise.resolve(m.createFriendlyMatch(initiatorId, opponentId, scheduledAt)),
     submitScore: (matchId: string, score: any) => Promise.resolve(m.submitScore(matchId, score)),
     confirmScore: (matchId: string) => Promise.resolve(m.confirmScore(matchId)),
     updateUser: (id: string, data: Partial<User>) => Promise.resolve(m.updateUser(id, data)),

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { Card } from '../components/Card';
 import { db } from '../services/db';
@@ -9,8 +9,9 @@ import { MatchStatus, MatchSet, MatchLogistics, ProposalLogistics, User } from '
 import { calculateStandings } from '../utils/standings';
 import { format, setMinutes, setSeconds } from 'date-fns';
 import { nb } from 'date-fns/locale';
-import { Calendar, Clock, MessageSquare, Check, Trophy, Trash2, Plus, X, MapPin, Phone, Mail } from 'lucide-react';
+import { Calendar, MessageSquare, Check, Trophy, Trash2, Plus, X, MapPin, Phone, Mail } from 'lucide-react';
 import { DateTimeSelector } from '../components/DateTimeSelector';
+import { TennisAvatar } from '../components/TennisAvatar';
 import { useAppContext } from '../context/AppContext';
 
 export const MatchDetail: React.FC = () => {
@@ -66,19 +67,61 @@ export const MatchDetail: React.FC = () => {
   const [proposalSentSuccess, setProposalSentSuccess] = useState(false);
   const [showOpponentProfile, setShowOpponentProfile] = useState<User | null>(null);
 
-  if (detailLoading && !detail) {
-    return <Layout><div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div></Layout>;
-  }
+  const skipNextScoreSaveRef = useRef(true);
+  // When match is REPORTED, allow editing score from current reported score
+  React.useEffect(() => {
+    const m = detail?.match;
+    if (m?.status === MatchStatus.REPORTED && m.score?.sets?.length) {
+      skipNextScoreSaveRef.current = true;
+      setSets(m.score.sets);
+    }
+  }, [detail?.match?.id, detail?.match?.status, detail?.match?.score?.sets?.length]);
+
   const match = detail?.match;
   const playerA = detail?.playerA;
   const playerB = detail?.playerB;
+  const isParticipant = user && playerA && playerB && (user.id === playerA.id || user.id === playerB.id);
+
+  const handleSubmitScore = useCallback(async () => {
+    if (!match || !playerA || !playerB) return;
+    let winsA = 0, winsB = 0;
+    sets.forEach(s => {
+      if (s.scoreA > s.scoreB) winsA++;
+      else if (s.scoreB > s.scoreA) winsB++;
+    });
+    const winnerId = winsA > winsB ? playerA.id : playerB.id;
+    await db.submitScore(match.id, { sets, winnerId });
+    refetchDetail();
+  }, [match?.id, sets, playerA?.id, playerB?.id]);
+
+  // Auto-save score when user edits (REPORTED match); debounced to avoid saving on every keystroke
+  useEffect(() => {
+    if (skipNextScoreSaveRef.current) {
+      skipNextScoreSaveRef.current = false;
+      return;
+    }
+    if (match?.status !== MatchStatus.REPORTED || !isParticipant) return;
+    const timer = setTimeout(() => {
+      let winsA = 0, winsB = 0;
+      sets.forEach(s => {
+        if (s.scoreA > s.scoreB) winsA++;
+        else if (s.scoreB > s.scoreA) winsB++;
+      });
+      const winnerId = winsA > winsB ? playerA?.id : playerB?.id;
+      if (winnerId) db.submitScore(match.id, { sets, winnerId }).then(refetchDetail);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [sets, match?.id, match?.status, isParticipant, playerA?.id, playerB?.id]);
+
+  if (detailLoading && !detail) {
+    return <Layout><div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" /></div></Layout>;
+  }
   const proposals = detail?.proposals ?? [];
   const division = detail?.division;
 
   if (!match || !user) return <Layout><div>Match not found</div></Layout>;
   if (!playerA || !playerB) return null;
 
-  const isParticipant = user.id === playerA.id || user.id === playerB.id;
   const opponent = user.id === playerA.id ? playerB : playerA;
 
   // Determine if there are incoming proposals I need to answer
@@ -158,17 +201,6 @@ export const MatchDetail: React.FC = () => {
     refetchDetail();
   };
 
-  const handleSubmitScore = async () => {
-    let winsA = 0, winsB = 0;
-    sets.forEach(s => {
-      if (s.scoreA > s.scoreB) winsA++;
-      else if (s.scoreB > s.scoreA) winsB++;
-    });
-    const winnerId = winsA > winsB ? playerA.id : playerB.id;
-    await db.submitScore(match.id, { sets, winnerId });
-    refetchDetail();
-  };
-
   const handleConfirmScore = async () => {
     await db.confirmScore(match.id);
     refetchDetail();
@@ -211,15 +243,15 @@ export const MatchDetail: React.FC = () => {
           <div className="flex flex-col items-center w-1/3">
             {opponent.id === playerA.id ? (
               <button type="button" onClick={() => setShowOpponentProfile(playerA)} className="flex flex-col items-center w-full rounded-xl hover:ring-2 hover:ring-lime-400 transition-all focus:outline-none focus:ring-2 focus:ring-lime-400">
-                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-                  {playerA.avatarUrl ? <img src={playerA.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerA.name.charAt(0)}
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center overflow-hidden mb-2">
+                  <TennisAvatar user={playerA} size={64} />
                 </div>
                 <div className="font-bold text-slate-900 text-sm leading-tight">{playerA.name.split(' ')[0]}</div>
               </button>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-                  {playerA.avatarUrl ? <img src={playerA.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerA.name.charAt(0)}
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center overflow-hidden mb-2">
+                  <TennisAvatar user={playerA} size={64} />
                 </div>
                 <div className="font-bold text-slate-900 text-sm leading-tight">{playerA.name.split(' ')[0]}</div>
               </>
@@ -245,15 +277,15 @@ export const MatchDetail: React.FC = () => {
           <div className="flex flex-col items-center w-1/3">
             {opponent.id === playerB.id ? (
               <button type="button" onClick={() => setShowOpponentProfile(playerB)} className="flex flex-col items-center w-full rounded-xl hover:ring-2 hover:ring-lime-400 transition-all focus:outline-none focus:ring-2 focus:ring-lime-400">
-                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-                  {playerB.avatarUrl ? <img src={playerB.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerB.name.charAt(0)}
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center overflow-hidden mb-2">
+                  <TennisAvatar user={playerB} size={64} />
                 </div>
                 <div className="font-bold text-slate-900 text-sm leading-tight">{playerB.name.split(' ')[0]}</div>
               </button>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center text-slate-400 font-bold text-2xl mb-2">
-                  {playerB.avatarUrl ? <img src={playerB.avatarUrl} className="w-full h-full rounded-full" alt="" /> : playerB.name.charAt(0)}
+                <div className="w-16 h-16 rounded-full bg-white border-4 border-slate-100 shadow-sm flex items-center justify-center overflow-hidden mb-2">
+                  <TennisAvatar user={playerB} size={64} />
                 </div>
                 <div className="font-bold text-slate-900 text-sm leading-tight">{playerB.name.split(' ')[0]}</div>
               </>
@@ -270,8 +302,8 @@ export const MatchDetail: React.FC = () => {
               <button type="button" onClick={() => setShowOpponentProfile(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
             <div className="text-center mb-4">
-              <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-500 mx-auto mb-2">
-                {showOpponentProfile.avatarUrl ? <img src={showOpponentProfile.avatarUrl} className="w-full h-full rounded-full" alt="" /> : showOpponentProfile.name.charAt(0)}
+              <div className="w-20 h-20 rounded-full mx-auto mb-2 flex items-center justify-center overflow-hidden">
+                <TennisAvatar user={showOpponentProfile} size={80} />
               </div>
               <h3 className="font-bold text-slate-900">{showOpponentProfile.name}</h3>
               <p className="text-xs text-slate-500">UTR {showOpponentProfile.utr ?? '—'}</p>
@@ -365,8 +397,8 @@ export const MatchDetail: React.FC = () => {
       {/* Match Actions Section */}
       <div className="space-y-6">
         
-        {/* SCORE DISPLAY */}
-        {(match.status === MatchStatus.REPORTED || match.status === MatchStatus.CONFIRMED) && match.score && (
+        {/* SCORE DISPLAY – CONFIRMED: read-only. REPORTED: editable for reporter, confirm for opponent */}
+        {match.status === MatchStatus.CONFIRMED && match.score && (
           <Card className="text-center bg-slate-900 text-white border-none shadow-xl">
             <Trophy className="mx-auto text-yellow-400 mb-2" />
             <h3 className="text-lg font-bold mb-4">Final Score</h3>
@@ -377,23 +409,92 @@ export const MatchDetail: React.FC = () => {
                 </div>
               ))}
             </div>
-            <p className="text-slate-400 text-sm mb-6">{t('common.winner')}: {match.score.winnerId === playerA.id ? playerA.name : playerB.name}</p>
-            
-            {match.status === MatchStatus.REPORTED && isParticipant && match.score.winnerId !== user.id && (
-               <button 
+            <p className="text-slate-400 text-sm">{t('common.winner')}: {match.score.winnerId === playerA.id ? playerA.name : playerB.name}</p>
+          </Card>
+        )}
+
+        {/* REPORTED: editable score until opponent confirms */}
+        {match.status === MatchStatus.REPORTED && match.score && isParticipant && (
+          <Card className="bg-slate-900 text-white border-none shadow-xl">
+            <h3 className="text-lg font-bold mb-2 text-center">{t('match.report.title')}</h3>
+            <p className="text-slate-400 text-xs text-center mb-4">{language === 'no' ? 'Du kan redigere scoren før motspilleren bekrefter.' : 'You can edit the score before your opponent confirms.'}</p>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
+              <span>Set</span>
+              <span className="w-16 text-center">{playerA.name.split(' ')[0]}</span>
+              <span className="w-16 text-center">{playerB.name.split(' ')[0]}</span>
+            </div>
+            {sets.map((set, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-700 mb-2">
+                <div className="text-sm font-bold text-slate-300 w-8 h-10 flex items-center justify-center bg-slate-700 rounded">{idx + 1}</div>
+                <div className="flex items-center gap-4">
+                  <input
+                    type="tel"
+                    className="w-16 h-10 text-center border-2 border-slate-600 rounded-lg font-mono text-lg font-bold bg-slate-800 text-white focus:border-lime-400 focus:outline-none"
+                    value={set.scoreA}
+                    onChange={(e) => {
+                      const newSets = [...sets];
+                      newSets[idx].scoreA = parseInt(e.target.value) || 0;
+                      setSets(newSets);
+                    }}
+                  />
+                  <span className="text-slate-500 font-black">-</span>
+                  <input
+                    type="tel"
+                    className="w-16 h-10 text-center border-2 border-slate-600 rounded-lg font-mono text-lg font-bold bg-slate-800 text-white focus:border-lime-400 focus:outline-none"
+                    value={set.scoreB}
+                    onChange={(e) => {
+                      const newSets = [...sets];
+                      newSets[idx].scoreB = parseInt(e.target.value) || 0;
+                      setSets(newSets);
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+            <div className="flex gap-2 mt-4">
+              {sets.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setSets(sets.slice(0, -1))}
+                  className="px-4 py-2 border border-slate-600 text-slate-400 rounded-lg font-bold hover:bg-slate-700"
+                >
+                  <Trash2 size={16} className="inline" /> {language === 'no' ? 'Fjern sett' : 'Remove set'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSets([...sets, { scoreA: 0, scoreB: 0 }])}
+                className="px-4 py-2 border border-slate-600 text-slate-300 rounded-lg font-bold hover:bg-slate-700 flex items-center gap-1"
+              >
+                <Plus size={16} /> {language === 'no' ? 'Legg til sett' : 'Add set'}
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 mt-4">
+              <p className="text-slate-500 text-xs text-center">
+                {language === 'no' ? 'Scoren lagres automatisk når du endrer.' : 'Score is saved automatically when you edit.'}
+              </p>
+              <button
+                type="button"
                 onClick={handleConfirmScore}
                 className="w-full bg-lime-400 text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-lime-300 transition-colors shadow-lg shadow-lime-900/20"
-               >
-                 {t('match.report.confirm')}
-               </button>
-            )}
-            
-            {match.status === MatchStatus.REPORTED && (!isParticipant || match.score.winnerId === user.id) && (
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-400 bg-slate-800/50 py-2 rounded-lg">
-                    <Clock size={16} />
-                    {t('match.report.waiting')}
+              >
+                {t('match.report.confirm')}
+              </button>
+            </div>
+          </Card>
+        )}
+
+        {match.status === MatchStatus.REPORTED && !isParticipant && match.score && (
+          <Card className="text-center bg-slate-900 text-white border-none shadow-xl">
+            <h3 className="text-lg font-bold mb-4">Reported Score</h3>
+            <div className="flex justify-center gap-2 mb-4">
+              {match.score.sets.map((s, i) => (
+                <div key={i} className="bg-slate-800 px-4 py-3 rounded-lg text-2xl font-mono font-bold border border-slate-700">
+                  {s.scoreA}-{s.scoreB}
                 </div>
-            )}
+              ))}
+            </div>
+            <p className="text-slate-400 text-sm">{t('common.winner')}: {match.score.winnerId === playerA.id ? playerA.name : playerB.name}</p>
           </Card>
         )}
 
@@ -654,6 +755,17 @@ export const MatchDetail: React.FC = () => {
         {isParticipant && match.status === MatchStatus.SCHEDULED && (
             <Card title={t('match.report.title')}>
                 <div className="space-y-6">
+                    <Link
+                        to={`/match/${match.id}/live`}
+                        className="block w-full py-3 rounded-xl bg-lime-500 text-slate-900 font-bold text-center hover:bg-lime-400"
+                    >
+                        {t('live.startMatch')}
+                    </Link>
+                    <div className="flex items-center gap-2">
+                        <div className="flex-1 h-px bg-slate-200" />
+                        <span className="text-xs text-slate-400 font-bold">{language === 'no' ? 'Eller skriv inn manuelt' : 'Or enter manually'}</span>
+                        <div className="flex-1 h-px bg-slate-200" />
+                    </div>
                     <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider px-2">
                          <span>Set</span>
                          <span className="w-16 text-center">{playerA.name.split(' ')[0]}</span>

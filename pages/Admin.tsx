@@ -11,6 +11,7 @@ import {
     ChevronRight, Activity, X, Mail, Phone, Lock, Copy, Check
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { TennisAvatar } from '../components/TennisAvatar';
 
 type AdminTab = 'overview' | 'seasons' | 'players' | 'settings';
 
@@ -277,8 +278,8 @@ export const Admin: React.FC = () => {
                    className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-lime-400 hover:shadow-md transition-all"
                  >
                      <div className="flex items-center gap-3">
-                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
-                             {u.avatarUrl ? <img src={u.avatarUrl} className="w-full h-full rounded-full" /> : u.name.charAt(0)}
+                         <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0">
+                             <TennisAvatar user={u} size={40} />
                          </div>
                          <div>
                              <div className="font-bold text-sm text-slate-900">{u.name}</div>
@@ -516,8 +517,8 @@ export const Admin: React.FC = () => {
                   </div>
                   
                   <div className="text-center mb-6">
-                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-3xl font-bold text-slate-500 mx-auto mb-3">
-                            {selectedPlayer.avatarUrl ? <img src={selectedPlayer.avatarUrl} className="w-full h-full rounded-full" /> : selectedPlayer.name.charAt(0)}
+                        <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden mx-auto mb-3">
+                            <TennisAvatar user={selectedPlayer} size={80} />
                         </div>
                         <h2 className="text-xl font-bold text-slate-900">{selectedPlayer.name}</h2>
                         <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold uppercase ${selectedPlayer.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>

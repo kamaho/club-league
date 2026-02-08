@@ -43,6 +43,18 @@ export interface User {
   preferences?: UserPreferences;
 }
 
+export interface Club {
+  id: string;
+  name: string;
+  city?: string;
+}
+
+export interface ClubActivityRankEntry {
+  userId: string;
+  completedMatches: number;
+  rank: number;
+}
+
 export interface Season {
   id: string;
   clubId: string;
@@ -78,6 +90,7 @@ export interface MatchScore {
 
 export interface ProposalLogistics {
   courtNumber?: number;
+  venueName?: string; // Arena / venue name
   bookedById: string; // The specific User ID
   cost: number;
   splitType: 'BOOKER_PAYS' | 'SPLIT';

@@ -6,11 +6,13 @@ import { ForgotPassword } from './pages/ForgotPassword';
 import { Home } from './pages/Home';
 import { Standings } from './pages/Standings';
 import { MatchDetail } from './pages/MatchDetail';
+import { LiveMatch } from './pages/LiveMatch';
 import { Profile } from './pages/Profile';
 import { Admin } from './pages/Admin';
 import { AdminDivision } from './pages/AdminDivision';
 import { Matches } from './pages/Matches';
 import { Friendlies } from './pages/Friendlies';
+import { Analyse } from './pages/Analyse';
 import { RatingInfo } from './pages/RatingInfo';
 import { authService } from './services/auth';
 import { UserRole } from './types';
@@ -66,9 +68,20 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
 
+          <Route path="/analyse" element={
+            <ProtectedRoute>
+              <Analyse />
+            </ProtectedRoute>
+          } />
+
           <Route path="/match/:id" element={
             <ProtectedRoute>
               <MatchDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/match/:id/live" element={
+            <ProtectedRoute>
+              <LiveMatch />
             </ProtectedRoute>
           } />
 

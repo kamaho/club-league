@@ -10,6 +10,7 @@ import proposalsRoutes from './routes/proposals.js';
 import enrollmentsRoutes from './routes/enrollments.js';
 import settingsRoutes from './routes/settings.js';
 import seasonStatusRoutes from './routes/season-status.js';
+import clubsRoutes from './routes/clubs.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -26,6 +27,7 @@ app.use('/api/proposals', proposalsRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/season-status', seasonStatusRoutes);
+app.use('/api/clubs', clubsRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });

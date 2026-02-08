@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Club {
+  id   String  @id
+  name String
+  city String?
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique

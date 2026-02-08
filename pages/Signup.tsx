@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams, Navigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { ChevronLeft, Check, Camera, Search, Briefcase } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -53,6 +53,10 @@ export const Signup: React.FC = () => {
       
       setFormData(prev => ({ ...prev, utr: parseFloat(estimated.toFixed(1)) }));
   }, [skillAnswers]);
+
+  if (authService.getCurrentUser()) {
+    return <Navigate to="/" replace />;
+  }
 
   // --- CLUBS (real tennis clubs in Norway / nærområdet) ---
   const clubs = [

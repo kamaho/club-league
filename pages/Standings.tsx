@@ -4,7 +4,8 @@ import { Card } from '../components/Card';
 import { db } from '../services/db';
 import { useQuery } from '../hooks/useQuery';
 import { calculateStandings } from '../utils/standings';
-import { ChevronDown, Trophy, Medal } from 'lucide-react';
+import type { StandingsRow } from '../types';
+import { ChevronDown, Trophy, Medal, X } from 'lucide-react';
 
 export const Standings: React.FC = () => {
   const [seasonsData] = useQuery(() => db.getSeasons(), []);
@@ -37,6 +38,8 @@ export const Standings: React.FC = () => {
 
   const standings = calculateStandings(matches, players);
   const isCompletedSeason = selectedSeason?.status === 'COMPLETED';
+  const [selectedRow, setSelectedRow] = useState<StandingsRow | null>(null);
+  const selectedPlayer = selectedRow ? players.find(p => p.id === selectedRow.playerId) : undefined;
 
   // --- Components ---
   
@@ -154,7 +157,14 @@ export const Standings: React.FC = () => {
             {standings.map((row, idx) => {
                const isTop3 = isCompletedSeason && idx < 3;
                return (
-                <tr key={row.playerId} className={`hover:bg-slate-50 transition-colors ${isTop3 ? 'bg-yellow-50/30' : ''}`}>
+                <tr
+                  key={row.playerId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedRow(row)}
+                  onKeyDown={(e) => e.key === 'Enter' && setSelectedRow(row)}
+                  className={`hover:bg-slate-50 transition-colors cursor-pointer ${isTop3 ? 'bg-yellow-50/30' : ''}`}
+                >
                     <td className="px-4 py-3 text-slate-400 font-mono text-xs">
                         {isTop3 ? <Medal size={14} className={idx === 0 ? 'text-yellow-500' : idx === 1 ? 'text-slate-400' : 'text-orange-400'} /> : idx + 1}
                     </td>
@@ -179,6 +189,68 @@ export const Standings: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* Player stats popup */}
+      {selectedRow && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSelectedRow(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Player stats"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                onClick={() => setSelectedRow(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="text-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-500 mx-auto mb-2">
+                {selectedRow.playerName.charAt(0)}
+              </div>
+              <h3 className="font-bold text-slate-900 text-lg">{selectedRow.playerName}</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                UTR <span className="font-bold text-slate-700">{selectedPlayer?.utr ?? '—'}</span>
+              </p>
+            </div>
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Rank</span>
+                <span className="font-bold text-slate-900">
+                  #{standings.findIndex(r => r.playerId === selectedRow.playerId) + 1}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Matches played</span>
+                <span className="font-bold text-slate-900">{selectedRow.matchesPlayed}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">W–L</span>
+                <span className="font-bold text-slate-900">{selectedRow.wins}–{selectedRow.losses}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Points</span>
+                <span className="font-bold text-slate-900">{selectedRow.points}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Set diff</span>
+                <span className="font-bold text-slate-900">
+                  {selectedRow.setsWon - selectedRow.setsLost > 0 ? '+' : ''}{selectedRow.setsWon - selectedRow.setsLost}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {!isCompletedSeason && (
           <div className="bg-slate-900 text-white rounded-xl p-5 mb-8">

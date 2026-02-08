@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { getApiUrl } from '../services/api';
 
@@ -9,6 +9,11 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const useApi = !!getApiUrl();
+
+  // Hvis bruker allerede er innlogget (f.eks. trykket tilbake), send tilbake til appen – unngår å havne på innlogging.
+  if (authService.getCurrentUser()) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

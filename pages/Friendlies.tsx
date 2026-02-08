@@ -8,6 +8,7 @@ import { MatchStatus, MatchType } from '../types';
 import { Smile, Plus, X, History, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/Card';
+import { TennisAvatar } from '../components/TennisAvatar';
 
 export const Friendlies: React.FC = () => {
   const user = authService.getCurrentUser();
@@ -149,8 +150,8 @@ export const Friendlies: React.FC = () => {
                                 onClick={() => handleCreateFriendly(opp.id)}
                                 className="w-full flex items-center gap-4 p-3 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50 transition-all text-left group"
                               >
-                                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">
-                                      {opp.avatarUrl ? <img src={opp.avatarUrl} className="w-full h-full rounded-full" /> : opp.name.charAt(0)}
+                                  <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0">
+                                      <TennisAvatar user={opp} size={40} />
                                   </div>
                                   <div>
                                       <div className="font-bold text-slate-900 group-hover:text-indigo-700">{opp.name}</div>

@@ -7,6 +7,22 @@ const prisma = new PrismaClient();
 const MOCK_CLUB_ID = 'club-1';
 
 async function main() {
+  // Clubs (must exist before users reference clubId)
+  const clubs = [
+    { id: 'club-1', name: 'Oslo Tennisklubb (OTK)', city: 'Oslo' },
+    { id: 'club-2', name: 'Bergens Tennisklubb (BTK)', city: 'Bergen' },
+    { id: 'club-3', name: 'Stavanger Tennisklubb', city: 'Stavanger' },
+    { id: 'club-4', name: 'Trondheim Tennisklubb', city: 'Trondheim' },
+    { id: 'club-5', name: 'Kristiansand Tennisklubb', city: 'Kristiansand' },
+  ];
+  for (const club of clubs) {
+    await prisma.club.upsert({
+      where: { id: club.id },
+      update: { name: club.name, city: club.city ?? null },
+      create: club,
+    });
+  }
+
   // Default password for demo users: "demo123"
   const passwordHash = bcrypt.hashSync('demo123', 10);
 
@@ -118,6 +134,46 @@ async function main() {
     },
   });
 
+  const testUser = await prisma.user.upsert({
+    where: { email: 'test@test.no' },
+    update: {},
+    create: {
+      id: 'u6',
+      email: 'test@test.no',
+      passwordHash,
+      name: 'Test User',
+      role: 'PLAYER',
+      clubId: MOCK_CLUB_ID,
+      utr: 6.0,
+      preferences: JSON.stringify({
+        matchFrequency: '1_per_2_weeks',
+        opponentGender: 'both',
+        availability: {},
+        skipNextRound: false,
+      }),
+    },
+  });
+
+  const holst = await prisma.user.upsert({
+    where: { email: 'h0lst@icloud.com' },
+    update: {},
+    create: {
+      id: 'u7',
+      email: 'h0lst@icloud.com',
+      passwordHash,
+      name: 'Holst',
+      role: 'PLAYER',
+      clubId: MOCK_CLUB_ID,
+      utr: 6.0,
+      preferences: JSON.stringify({
+        matchFrequency: '1_per_2_weeks',
+        opponentGender: 'both',
+        availability: {},
+        skipNextRound: false,
+      }),
+    },
+  });
+
   const spring = await prisma.season.upsert({
     where: { id: 's0' },
     update: {},
@@ -160,8 +216,9 @@ async function main() {
     create: { id: 'd2', seasonId: 's1', name: 'Division B' },
   });
 
-  // Enrollments for Division A (d1): Bob, Charlie, Diana, Evan
-  for (const userId of ['u2', 'u3', 'u4', 'u5']) {
+  // Enrollments for Division A (d1): Bob, Charlie, Diana, Evan, test@test.no, h0lst@icloud.com
+  const divisionAUserIds = [bob.id, charlie.id, diana.id, evan.id, testUser.id, holst.id];
+  for (const userId of divisionAUserIds) {
     await prisma.enrollment.upsert({
       where: { divisionId_userId: { divisionId: 'd1', userId } },
       update: {},
@@ -176,7 +233,15 @@ async function main() {
     create: { id: MOCK_CLUB_ID, logoUrl: '' },
   });
 
-  console.log('Seed done:', { alice: alice.email, bob: bob.email, charlie: charlie.email, diana: diana.email, evan: evan.email });
+  console.log('Seed done:', {
+    alice: alice.email,
+    bob: bob.email,
+    charlie: charlie.email,
+    diana: diana.email,
+    evan: evan.email,
+    test: testUser.email,
+    holst: holst.email,
+  });
 }
 
 main()

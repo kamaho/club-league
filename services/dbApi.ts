@@ -12,6 +12,8 @@ import type {
   MatchStatus,
   MatchLogistics,
   ProposalLogistics,
+  Club,
+  ClubActivityRankEntry,
 } from '../types';
 
 export function createApiDb() {
@@ -21,6 +23,12 @@ export function createApiDb() {
 
     getUser: (id: string): Promise<User | undefined> =>
       fetchApi<User>(`/api/users/${id}`).catch(() => undefined),
+
+    getClub: (id: string): Promise<Club | null> =>
+      fetchApi<Club>(`/api/clubs/${encodeURIComponent(id)}`).catch(() => null),
+
+    getClubActivityRanking: (clubId: string): Promise<ClubActivityRankEntry[]> =>
+      fetchApi<ClubActivityRankEntry[]>(`/api/clubs/${encodeURIComponent(clubId)}/activity-ranking`).catch(() => []),
 
     getSeasons: (): Promise<Season[]> =>
       fetchApi<Season[]>('/api/seasons'),

@@ -4,100 +4,37 @@ import { Card } from '../components/Card';
 import { authService } from '../services/auth';
 import { db } from '../services/db';
 import { useQuery } from '../hooks/useQuery';
-import { calculateStandings } from '../utils/standings';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { 
-  Mail, Phone, Trash2, Save, Calendar, PauseCircle, XCircle, RotateCcw, TrendingUp, Settings, Trophy, Smile, HelpCircle
-} from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
-import { User as UserType, MatchType } from '../types';
+import { Mail, Phone, Trash2, Save, Calendar, PauseCircle, XCircle, RotateCcw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { User as UserType } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { AvailabilitySelector } from '../components/AvailabilitySelector';
+import { TennisAvatar } from '../components/TennisAvatar';
 
 export const Profile: React.FC = () => {
   const navigate = useNavigate();
   const currentUser = authService.getCurrentUser();
   const { t, language, setLanguage } = useAppContext();
-  
-  // Tabs: 'stats' | 'settings'
-  const [activeTab, setActiveTab] = useState<'stats' | 'settings'>('stats');
-  
-  // "Committed" state (what is in DB)
+
   const [user, setUser] = useState<UserType | undefined>(currentUser);
-  
-  // "Draft" state (what is being edited)
   const [editForm, setEditForm] = useState<UserType>(currentUser || {} as any);
 
-  // Sync editForm if user reloads or changes (mostly for safety)
   useEffect(() => {
     if (currentUser) {
-       setUser(currentUser);
-       setEditForm(currentUser);
+      setUser(currentUser);
+      setEditForm(currentUser);
     }
-  }, [currentUser?.id]); // Only re-sync if ID changes (e.g. relogin)
+  }, [currentUser?.id]);
 
-  const [allMatchesData] = useQuery(() => user ? db.getMatchesForUser(user.id) : Promise.resolve([]), [user?.id]);
-  const [enrollmentsData, , refetchEnrollments] = useQuery(() => user ? db.getEnrollmentsForUser(user.id) : Promise.resolve([]), [user?.id]);
-  const allMatches = allMatchesData ?? [];
+  const [enrollmentsData, , refetchEnrollments] = useQuery(
+    () => (user ? db.getEnrollmentsForUser(user.id) : Promise.resolve([])),
+    [user?.id]
+  );
   const enrollments = enrollmentsData ?? [];
   const currentDivisionId = enrollments[0]?.divisionId;
 
-  const [divisionData] = useQuery(() => currentDivisionId ? db.getDivision(currentDivisionId) : Promise.resolve(undefined), [currentDivisionId]);
-  const [divisionPlayersData] = useQuery(() => currentDivisionId ? db.getPlayersInDivision(currentDivisionId) : Promise.resolve([]), [currentDivisionId]);
-  const [divisionMatchesData] = useQuery(() => currentDivisionId ? db.getMatchesForDivision(currentDivisionId) : Promise.resolve([]), [currentDivisionId]);
-  const [seasonsData] = useQuery(() => db.getSeasons(), []);
-  const [usersData] = useQuery(() => db.getUsers(), []);
-  const seasons = seasonsData ?? [];
-  const seasonIds = seasons.map(s => s.id).join(',');
-  const [allDivisionsData] = useQuery(
-    () => (seasons.length ? Promise.all(seasons.map(s => db.getDivisions(s.id))).then(arr => arr.flat()) : Promise.resolve([])),
-    [seasonIds]
-  );
-  const allDivisions = allDivisionsData ?? [];
-
-  const division = divisionData ?? undefined;
-  const divisionPlayers = divisionPlayersData ?? [];
-  const divisionMatches = divisionMatchesData ?? [];
-  const users = usersData ?? [];
-  const getDivision = (divisionId: string) => allDivisions.find(d => d.id === divisionId);
-  const getSeasonForMatch = (match: { divisionId?: string }) => {
-    const div = match.divisionId ? getDivision(match.divisionId) : undefined;
-    return div ? seasons.find(s => s.id === div.seasonId) : undefined;
-  };
-
-  const standings = calculateStandings(divisionMatches, divisionPlayers);
-  const rank = user ? standings.findIndex(s => s.playerId === user.id) + 1 : 0;
-
-  const leagueMatches = allMatches.filter(m => m.type !== MatchType.FRIENDLY);
-  const friendlyMatches = allMatches.filter(m => m.type === MatchType.FRIENDLY);
-
-  const calculateStats = (matchList: typeof allMatches) => {
-    if (!user) return { completed: [] as typeof allMatches, won: 0, lost: 0, winRate: 0 };
-    const completed = matchList.filter(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER');
-    const won = completed.filter(m => m.score?.winnerId === user.id).length;
-    const lost = completed.length - won;
-    const winRate = completed.length > 0 ? Math.round((won / completed.length) * 100) : 0;
-    return { completed, won, lost, winRate };
-  };
-
-  const leagueStats = calculateStats(leagueMatches);
-  const friendlyStats = calculateStats(friendlyMatches);
-
   if (!user) return null;
 
-  // Development curve: no fake history. New users see empty state until they have completed matches.
-  const hasAnyCompletedMatches = leagueMatches.some(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER') ||
-    friendlyMatches.some(m => m.status === 'CONFIRMED' || m.status === 'REPORTED');
-  const developmentData = hasAnyCompletedMatches
-    ? [
-        { date: language === 'no' ? 'Start' : 'Start', utr: user.utr || 1 },
-        { date: language === 'no' ? 'Nå' : 'Now', utr: user.utr || 1 },
-      ]
-    : [];
-
-  // --- SETTINGS LOGIC ---
-
-  // Determine if there are unsaved changes
   const hasChanges = JSON.stringify(user) !== JSON.stringify(editForm);
 
   const handleSave = async () => {
@@ -131,163 +68,12 @@ export const Profile: React.FC = () => {
 
   return (
     <Layout>
-      {/* Tab Switcher */}
-      <div className="flex bg-white rounded-xl p-1 mb-6 border border-slate-200 shadow-sm">
-         <button 
-           onClick={() => setActiveTab('stats')}
-           className={`flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'stats' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
-         >
-            <TrendingUp size={16} /> {t('profile.tab.stats')}
-         </button>
-         <button 
-           onClick={() => setActiveTab('settings')}
-           className={`flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === 'settings' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}
-         >
-            <Settings size={16} /> {t('profile.tab.settings')}
-         </button>
-      </div>
-
-      {activeTab === 'stats' ? (
-          /* --- PERFORMANCE DASHBOARD --- */
-          <div className="space-y-6">
-              
-              {/* Player Card */}
-              <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-lime-500/20 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-                 
-                 <div className="flex items-center gap-4 mb-6 relative z-10">
-                    <div className="w-16 h-16 rounded-full border-2 border-slate-700 bg-slate-800 flex items-center justify-center text-xl font-bold overflow-hidden">
-                        {user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover" /> : user.name.charAt(0)}
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold">{user.name}</h2>
-                        <p className="text-slate-400 text-sm">
-                            {division?.name || 'No Division'} • <span className="text-lime-400 font-bold">Rank #{rank > 0 ? rank : '-'}</span>
-                        </p>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-3 gap-4 border-t border-slate-800 pt-6">
-                    <div className="text-center">
-                        <Link to="/rating-info" className="flex items-center justify-center gap-1 hover:text-lime-400 transition-colors">
-                           <div className="text-2xl font-black text-lime-400">{user.utr || '-'}</div>
-                           <HelpCircle size={12} className="text-slate-500 mb-2" />
-                        </Link>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{t('profile.stats.rating')}</div>
-                    </div>
-                    <div className="text-center border-l border-slate-800">
-                        <div className="text-2xl font-black">{leagueStats.winRate}%</div>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{t('profile.stats.winRate')}</div>
-                    </div>
-                    <div className="text-center border-l border-slate-800">
-                        <div className="text-2xl font-black">{leagueStats.won}-{leagueStats.lost}</div>
-                        <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{t('profile.stats.record')}</div>
-                    </div>
-                 </div>
-              </div>
-
-              {/* Friendly Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex items-center gap-4">
-                     <div className="bg-white p-2 rounded-full text-indigo-500 shadow-sm">
-                        <Smile size={20} />
-                     </div>
-                     <div>
-                        <div className="text-sm font-bold text-slate-900">Friendlies</div>
-                        <div className="text-xs text-slate-500">{friendlyStats.won}W - {friendlyStats.lost}L ({friendlyStats.winRate}%)</div>
-                     </div>
-                 </div>
-                 <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex items-center gap-4">
-                     <div className="bg-white p-2 rounded-full text-amber-500 shadow-sm">
-                        <Trophy size={20} />
-                     </div>
-                     <div>
-                        <div className="text-sm font-bold text-slate-900">League</div>
-                        <div className="text-xs text-slate-500">{leagueStats.won}W - {leagueStats.lost}L ({leagueStats.winRate}%)</div>
-                     </div>
-                 </div>
-              </div>
-
-              {/* UTR Chart – only show when user has data; new users see current rating only */}
-              <Card title={language === 'no' ? 'Utviklingskurve' : 'Development Curve'}>
-                {developmentData.length === 0 ? (
-                  <div className="h-48 flex items-center justify-center text-slate-400 text-sm px-4 text-center">
-                    {language === 'no' ? 'Ingen data ennå. Spill kamper for å se utvikling.' : 'No data yet. Play matches to see your development.'}
-                  </div>
-                ) : (
-                  <div className="h-48 w-full mt-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={developmentData}>
-                        <XAxis dataKey="date" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
-                        <YAxis domain={[Math.max(0, (user.utr || 1) - 1), (user.utr || 1) + 1]} hide />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="utr" stroke="#84cc16" strokeWidth={3} dot={{r: 4, fill: '#84cc16'}} activeDot={{r: 6}} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </Card>
-              
-              {/* Match History List */}
-              <div className="space-y-3">
-                 <h3 className="font-bold text-slate-800 px-1">Recent Matches</h3>
-                 {allMatches.filter(m => m.status === 'CONFIRMED' || m.status === 'WALKOVER').slice().reverse().map(match => {
-                     const isWin = match.score?.winnerId === user.id;
-                     const opponentId = match.playerAId === user.id ? match.playerBId : match.playerAId;
-                     const opponent = users.find(u => u.id === opponentId);
-                     const season = getSeasonForMatch(match);
-
-                     return (
-                         <div key={match.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                             <div className="flex items-center gap-3">
-                                 <div className={`w-1 h-10 rounded-full ${isWin ? 'bg-lime-500' : 'bg-red-400'}`}></div>
-                                 <div>
-                                     <div className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                                         {isWin ? <span className="text-lime-600">W</span> : <span className="text-red-500">L</span>}
-                                         <span className="text-slate-300">vs</span> 
-                                         {opponent?.name}
-                                     </div>
-                                     <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                         {match.type === MatchType.FRIENDLY ? (
-                                             <span className="text-indigo-400 font-bold bg-indigo-50 px-1 rounded">Friendly</span>
-                                         ) : (
-                                            <span>{season?.name || 'League Match'}</span>
-                                         )}
-                                     </div>
-                                 </div>
-                             </div>
-                             
-                             <div className="text-right">
-                                 <div className="font-mono font-bold text-slate-800 text-sm">
-                                     {match.score?.sets.map(s => {
-                                         // Always show MyScore-OpponentScore
-                                         const myScore = match.playerAId === user.id ? s.scoreA : s.scoreB;
-                                         const oppScore = match.playerAId === user.id ? s.scoreB : s.scoreA;
-                                         return `${myScore}-${oppScore}`;
-                                     }).join(' ')}
-                                 </div>
-                                 <div className="text-[10px] text-slate-400 mt-0.5">
-                                     {match.scheduledAt ? new Date(match.scheduledAt).toLocaleDateString() : 'Unknown date'}
-                                 </div>
-                             </div>
-                         </div>
-                     );
-                 })}
-                 {allMatches.length === 0 && (
-                     <div className="text-center p-8 text-slate-400 bg-white rounded-xl border border-dashed">
-                         No matches played yet.
-                     </div>
-                 )}
-              </div>
-          </div>
-      ) : (
-          /* --- SETTINGS TAB --- */
-          <div className="space-y-6 pb-20">
+      <div className="space-y-6 pb-20">
               {/* Header Profile Section (Small) */}
               <div className="flex items-center gap-4 p-4 bg-white rounded-xl border border-slate-100">
                 <div className="relative group cursor-pointer">
-                    <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center text-xl font-bold text-slate-500 overflow-hidden">
-                        {user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover" /> : user.name.charAt(0)}
+                    <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center">
+                        {user && <TennisAvatar user={user} size={48} />}
                     </div>
                 </div>
                 <div>
@@ -504,8 +290,7 @@ export const Profile: React.FC = () => {
                         </div>
                     </div>
               )}
-          </div>
-      )}
+      </div>
     </Layout>
   );
 };
